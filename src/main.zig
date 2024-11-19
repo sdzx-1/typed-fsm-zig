@@ -66,7 +66,7 @@ pub fn ST(T: type, a: T, b: T) type {
     };
 }
 
-fn f1(val: ST(S, .s1, .s0), ref: *i32) void {
+fn f1(comptime val: ST(S, .s1, .s0), ref: *i32) void {
     std.debug.print("val: {d}\n", .{ref.*});
     switch (val.getMsg()) {
         .s1Tos2 => |next| {
@@ -77,7 +77,7 @@ fn f1(val: ST(S, .s1, .s0), ref: *i32) void {
     }
 }
 
-fn f2(val: ST(S, .s2, .s0), ref: *i32) void {
+fn f2(comptime val: ST(S, .s2, .s0), ref: *i32) void {
     switch (val.getMsg()) {
         .s2Tos3 => |next| {
             // ref.* += 1;
@@ -87,7 +87,7 @@ fn f2(val: ST(S, .s2, .s0), ref: *i32) void {
     }
 }
 
-fn f3(val: ST(S, .s3, .s0), ref: *i32) void {
+fn f3(comptime val: ST(S, .s3, .s0), ref: *i32) void {
     switch (val.getMsg()) {
         .s3Tos0 => |_| {},
         .s3Tos1 => |next| {
