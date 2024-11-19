@@ -71,7 +71,8 @@ fn f1(val: ST(S, .s1, .s0), ref: *i32) void {
     switch (val.getMsg()) {
         .s1Tos2 => |next| {
             ref.* += 1;
-            f2(next, ref);
+            // f2(next, ref);
+            @call(.always_tail, f2, .{ next, ref });
         },
     }
 }
@@ -80,7 +81,8 @@ fn f2(val: ST(S, .s2, .s0), ref: *i32) void {
     switch (val.getMsg()) {
         .s2Tos3 => |next| {
             // ref.* += 1;
-            f3(next, ref);
+            // f3(next, ref);
+            @call(.always_tail, f3, .{ next, ref });
         },
     }
 }
@@ -90,7 +92,8 @@ fn f3(val: ST(S, .s3, .s0), ref: *i32) void {
         .s3Tos0 => |_| {},
         .s3Tos1 => |next| {
             // ref.* += 1;
-            f1(next, ref);
+            // f1(next, ref);
+            @call(.always_tail, f1, .{ next, ref });
         },
     }
 }
