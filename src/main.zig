@@ -28,6 +28,7 @@ fn f2(comptime val: ST(.s2), ref: *i64) void {
             ref.* += 1;
             @call(.always_tail, f2, .{ witness, ref });
         },
+        .Exit => |witness| witness.terminal(),
     }
 }
 

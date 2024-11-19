@@ -40,6 +40,7 @@ pub const S = enum {
         return union(enum) {
             Tos3: Witness(S, end, .s3),
             Tos2: Witness(S, end, .s2),
+            Exit: Witness(S, end, .s0),
 
             pub fn getMsg() @This() {
                 return .Tos3;
@@ -53,7 +54,7 @@ pub const S = enum {
             Exit: Witness(S, end, .s0),
 
             pub fn getMsg(ref: *i64) @This() {
-                if (ref.* > 10) return .Exit;
+                if (ref.* > 300) return .Exit;
                 return .Tos1;
             }
         };
