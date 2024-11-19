@@ -1,7 +1,7 @@
 const std = @import("std");
 
 pub fn main() !void {
-    var k: i32 = 0;
+    var k: i64 = 0;
     _ = f1(k1, &k);
 }
 
@@ -19,12 +19,6 @@ const S = enum {
         };
     }
 };
-const M = enum {
-    s1Tos2,
-    s2Tos3,
-    s3Tos1,
-    s3Tos0,
-};
 
 pub fn Msgs1(end: S) type {
     return union(enum) {
@@ -39,6 +33,8 @@ pub fn Msgs1(end: S) type {
 pub fn Msgs2(end: S) type {
     return union(enum) {
         s2Tos3: ST(S, .s3, end),
+        s2Tos2: ST(S, .s2, end),
+        s2Tos0: ST(S, .s0, end),
 
         pub fn getMsg() @This() {
             return .{ .s2Tos3 = .{} };
@@ -66,33 +62,38 @@ pub fn ST(T: type, a: T, b: T) type {
     };
 }
 
-fn f1(comptime val: ST(S, .s1, .s0), ref: *i32) void {
-    std.debug.print("val: {d}\n", .{ref.*});
+fn f1(comptime val: ST(S, .s1, .s0), ref: *i64) void {
+    if (@mod(ref.*, 1_000_000_000) == 0)
+        std.debug.print("f1: {d}\n", .{ref.*});
     switch (val.getMsg()) {
         .s1Tos2 => |next| {
             ref.* += 1;
-            // f2(next, ref);
             @call(.always_tail, f2, .{ next, ref });
         },
     }
 }
 
-fn f2(comptime val: ST(S, .s2, .s0), ref: *i32) void {
+fn f2(comptime val: ST(S, .s2, .s0), ref: *i64) void {
+    // std.debug.print("f2: {d}\n", .{ref.*});
     switch (val.getMsg()) {
         .s2Tos3 => |next| {
-            // ref.* += 1;
-            // f3(next, ref);
+            ref.* += 1;
             @call(.always_tail, f3, .{ next, ref });
         },
+        .s2Tos2 => |next| {
+            ref.* += 1;
+            @call(.always_tail, f2, .{ next, ref });
+        },
+        .s2Tos0 => |_| return {},
     }
 }
 
-fn f3(comptime val: ST(S, .s3, .s0), ref: *i32) void {
+fn f3(comptime val: ST(S, .s3, .s0), ref: *i64) void {
+    // std.debug.print("f3: {d}\n", .{ref.*});
     switch (val.getMsg()) {
         .s3Tos0 => |_| {},
         .s3Tos1 => |next| {
-            // ref.* += 1;
-            // f1(next, ref);
+            ref.* += 1;
             @call(.always_tail, f1, .{ next, ref });
         },
     }
