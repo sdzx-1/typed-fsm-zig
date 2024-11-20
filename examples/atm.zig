@@ -78,7 +78,7 @@ const AtmSt = enum {
                             if (ist.pin == v) {
                                 return .Correct;
                             } else {
-                                if (ist.times == 3) return .EjectCard;
+                                if (ist.times == 2) return .EjectCard;
                                 return .Incorrect;
                             }
                         }
