@@ -131,7 +131,7 @@ const InternalState = struct {
 
 // ready
 pub fn readyHander(comptime w: AtmSt.T(.ready), ist: *InternalState) void {
-    std.debug.print("ready\n", .{});
+    std.debug.print("current state: ready\n", .{});
     switch (w.getMsg()(&ist.buf)) {
         .ExitAtm => |witness| {
             std.debug.print("Exit ATM!\n", .{});
@@ -146,7 +146,7 @@ pub fn readyHander(comptime w: AtmSt.T(.ready), ist: *InternalState) void {
 
 // cardInserted,
 pub fn cardInsertedHander(comptime w: AtmSt.T(.cardInserted), ist: *InternalState) void {
-    std.debug.print("cardInserted\n", .{});
+    std.debug.print("current state: cardInserted\n", .{});
     switch (w.getMsg()(&ist.buf, ist)) {
         .Correct => |wit| {
             ist.times += 1;
@@ -167,7 +167,7 @@ pub fn cardInsertedHander(comptime w: AtmSt.T(.cardInserted), ist: *InternalStat
 
 // session,
 pub fn sessionHander(comptime w: AtmSt.T(.session), ist: *InternalState) void {
-    std.debug.print("session\n", .{});
+    std.debug.print("current state: session\n", .{});
     switch (w.getMsg()(&ist.buf, ist)) {
         .GetAmount => |wit| {
             std.debug.print("amount: {d}\n", .{ist.amount});
