@@ -38,7 +38,7 @@ const AtmSt = enum {
             ExitAtm: W(end, .exit),
             InsertCard: W(end, .cardInserted),
 
-            pub fn getMsg(buf: []u8) @This() {
+            pub fn genMsg(buf: []u8) @This() {
                 while (true) {
                     std.debug.print("insert or exit: ", .{});
                     const res = input.readUntilDelimiterOrEof(buf, '\n') catch blk: {
@@ -64,7 +64,7 @@ const AtmSt = enum {
             Incorrect: W(end, .cardInserted),
             EjectCard: W(end, .ready),
 
-            pub fn getMsg(buf: []u8, ist: *const InternalState) @This() {
+            pub fn genMsg(buf: []u8, ist: *const InternalState) @This() {
                 while (true) {
                     std.debug.print("input pin: ", .{});
                     const res = input.readUntilDelimiterOrEof(buf, '\n') catch blk: {
@@ -98,7 +98,7 @@ const AtmSt = enum {
             EjectCard: W(end, .ready),
             ChangePin: W(end, .changePin),
 
-            pub fn getMsg(buf: []u8, _: *const InternalState) @This() {
+            pub fn genMsg(buf: []u8, _: *const InternalState) @This() {
                 while (true) {
                     std.debug.print("getAmount or disponse or eject or changePin: ", .{});
                     const res = input.readUntilDelimiterOrEof(buf, '\n') catch blk: {
@@ -129,7 +129,7 @@ const AtmSt = enum {
         return union(enum) {
             Update: struct { v: usize, wit: W(end, .session) = .{} },
 
-            pub fn getMsg(buf: []u8) @This() {
+            pub fn genMsg(buf: []u8) @This() {
                 while (true) {
                     std.debug.print("input new pin: ", .{});
                     const res = input.readUntilDelimiterOrEof(buf, '\n') catch blk: {

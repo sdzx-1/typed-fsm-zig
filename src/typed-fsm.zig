@@ -8,9 +8,9 @@ pub fn Witness(T: type, end: T, start: T) type {
                 pub const wtype = T;
                 pub const wstart = start;
                 pub const wend = end;
-                pub fn getMsg(_: @This()) @TypeOf(stru.getMsg) {
+                pub fn getMsg(_: @This()) @TypeOf(stru.genMsg) {
                     if (end == start) @compileError("Can't getMsg");
-                    return stru.getMsg;
+                    return stru.genMsg;
                 }
 
                 pub fn terminal(_: @This()) void {
