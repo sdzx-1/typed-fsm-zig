@@ -18,6 +18,7 @@ const AtmSt = enum {
     ready,
     cardInserted,
     session,
+    changePin,
 
     pub fn T(s: AtmSt) type {
         return Witness(AtmSt, .exit, s);
@@ -95,15 +96,18 @@ const AtmSt = enum {
             GetAmount: W(end, .session),
             Disponse: struct { v: usize, wit: W(end, .session) = .{} },
             EjectCard: W(end, .ready),
+            ChangePin: W(end, .changePin),
 
             pub fn getMsg(buf: []u8, _: *const InternalState) @This() {
                 while (true) {
-                    std.debug.print("getAmount or disponse or eject: ", .{});
+                    std.debug.print("getAmount or disponse or eject or changePin: ", .{});
                     const res = input.readUntilDelimiterOrEof(buf, '\n') catch blk: {
                         break :blk null;
                     };
                     if (res) |line| {
-                        if (std.mem.eql(u8, line, "getAmount")) {
+                        if (std.mem.eql(u8, line, "changePin")) {
+                            return .ChangePin;
+                        } else if (std.mem.eql(u8, line, "getAmount")) {
                             return .GetAmount;
                         } else if (std.mem.eql(u8, line, "eject")) {
                             return .EjectCard;
@@ -113,6 +117,30 @@ const AtmSt = enum {
                             };
                             if (pres) |v| return .{ .Disponse = .{ .v = v } };
                         }
+                    }
+
+                    std.debug.print("input error\n", .{});
+                }
+            }
+        };
+    }
+
+    pub fn changePinMsg(end: AtmSt) type {
+        return union(enum) {
+            Update: struct { v: usize, wit: W(end, .session) = .{} },
+
+            pub fn getMsg(buf: []u8) @This() {
+                while (true) {
+                    std.debug.print("input new pin: ", .{});
+                    const res = input.readUntilDelimiterOrEof(buf, '\n') catch blk: {
+                        break :blk null;
+                    };
+
+                    if (res) |line| {
+                        const pres = std.fmt.parseInt(usize, line, 10) catch blk1: {
+                            break :blk1 null;
+                        };
+                        if (pres) |v| return .{ .Update = .{ .v = v } };
                     }
 
                     std.debug.print("input error\n", .{});
@@ -187,6 +215,14 @@ pub fn sessionHander(comptime w: AtmSt.T(.session), ist: *InternalState) void {
         .EjectCard => |wit| {
             std.debug.print("eject card\n", .{});
             @call(.always_tail, readyHander, .{ wit, ist });
+        },
+        .ChangePin => |wit| {
+            switch (wit.getMsg()(&ist.buf)) {
+                .Update => |val| {
+                    ist.pin = val.v;
+                    @call(.always_tail, sessionHander, .{ val.wit, ist });
+                },
+            }
         },
     }
 }
