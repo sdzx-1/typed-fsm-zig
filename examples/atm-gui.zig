@@ -3,6 +3,7 @@ const typedFsm = @import("typed-fsm");
 const Witness = typedFsm.Witness;
 
 const rl = @import("raylib");
+const g = @import("raygui");
 
 const InternalState = struct {
     pin: [4]u8,
@@ -47,6 +48,7 @@ pub fn main() anyerror!void {
         .resource = .{},
     };
     const start = AtmSt.T(.ready){};
+    g.guiSetStyle(.default, 16, 24);
     readyHander(start, &ist);
 }
 
@@ -81,23 +83,10 @@ const AtmSt = enum {
                     rl.beginDrawing();
                     defer rl.endDrawing();
                     rl.clearBackground(rl.Color.white);
-                    ist.resource.title.draw();
-                    ist.resource.insert.draw();
-                    ist.resource.exit.draw();
-
-                    if (rl.isKeyPressed(rl.KeyboardKey.key_escape)) {
-                        return .ExitAtm;
-                    }
-                    if (rl.isMouseButtonPressed(rl.MouseButton.mouse_button_left)) {
-                        const x = rl.getMouseX();
-                        const y = rl.getMouseY();
-
-                        if (ist.resource.insert.posInLabel(x, y)) {
-                            return .InsertCard;
-                        } else if (ist.resource.exit.posInLabel(x, y)) {
-                            return .ExitAtm;
-                        }
-                    }
+                    ist.resource.title.toLabel();
+                    if (ist.resource.insert.toButton()) return .InsertCard;
+                    if (ist.resource.exit.toButton()) return .ExitAtm;
+                    if (rl.isKeyPressed(rl.KeyboardKey.key_escape)) return .ExitAtm;
                 }
             }
         };
@@ -117,8 +106,9 @@ const AtmSt = enum {
                     rl.beginDrawing();
                     defer rl.endDrawing();
                     rl.clearBackground(rl.Color.white);
-                    ist.resource.title.draw();
-                    ist.resource.inputPin.draw();
+                    ist.resource.title.toLabel();
+                    ist.resource.inputPin.toLabel();
+
                     for (0..ist.tmpPin.len) |i| {
                         var tmpBuf: [10]u8 = undefined;
                         const st = std.fmt.bufPrintZ(&tmpBuf, "{d}", .{ist.tmpPin[i]}) catch "error";
@@ -128,28 +118,21 @@ const AtmSt = enum {
                     var tmpBuf: [40]u8 = undefined;
                     const st = std.fmt.bufPrintZ(&tmpBuf, "test times: {d}", .{ist.times}) catch "error";
                     rl.drawText(st, 100, 290, 30, rl.Color.green);
-                    ist.resource.check.draw();
+
+                    if (ist.resource.check.toButton()) {
+                        if (std.mem.eql(u8, &ist.pin, &ist.tmpPin)) {
+                            return .Correct;
+                        } else {
+                            if (ist.times == 2) return .EjectCard;
+                            return .Incorrect;
+                        }
+                    }
 
                     const kcode = rl.getKeyPressed();
                     const vi: i32 = @intFromEnum(kcode) - 48;
-
                     switch (vi) {
                         0...9 => return .{ .PushNum = .{ .v = @as(u8, @intCast(vi)) } },
                         else => {},
-                    }
-
-                    if (rl.isMouseButtonPressed(rl.MouseButton.mouse_button_left)) {
-                        const x = rl.getMouseX();
-                        const y = rl.getMouseY();
-
-                        if (ist.resource.check.posInLabel(x, y)) {
-                            if (std.mem.eql(u8, &ist.pin, &ist.tmpPin)) {
-                                return .Correct;
-                            } else {
-                                if (ist.times == 2) return .EjectCard;
-                                return .Incorrect;
-                            }
-                        }
                     }
                 }
             }
@@ -170,27 +153,14 @@ const AtmSt = enum {
                     rl.beginDrawing();
                     defer rl.endDrawing();
                     rl.clearBackground(rl.Color.white);
-                    ist.resource.title.draw();
+                    ist.resource.title.toLabel();
 
                     var tmpBuf: [40]u8 = undefined;
                     const st = std.fmt.bufPrintZ(&tmpBuf, "amount: {d}", .{ist.amount}) catch "error";
                     rl.drawText(st, 100, 90, 30, rl.Color.green);
-                    ist.resource.disponse.draw();
-                    ist.resource.changePin.draw();
-                    ist.resource.eject.draw();
-
-                    if (rl.isMouseButtonPressed(rl.MouseButton.mouse_button_left)) {
-                        const x = rl.getMouseX();
-                        const y = rl.getMouseY();
-
-                        if (ist.resource.disponse.posInLabel(x, y)) {
-                            return .{ .Disponse = .{ .v = 10 } };
-                        } else if (ist.resource.changePin.posInLabel(x, y)) {
-                            return .ChangePin;
-                        } else if (ist.resource.eject.posInLabel(x, y)) {
-                            return .EjectCard;
-                        }
-                    }
+                    if (ist.resource.disponse.toButton()) return .{ .Disponse = .{ .v = 10 } };
+                    if (ist.resource.changePin.toButton()) return .ChangePin;
+                    if (ist.resource.eject.toButton()) return .EjectCard;
                 }
             }
         };
@@ -208,30 +178,21 @@ const AtmSt = enum {
                     rl.beginDrawing();
                     defer rl.endDrawing();
                     rl.clearBackground(rl.Color.white);
-                    ist.resource.title.draw();
-
-                    ist.resource.inputPin.draw();
+                    ist.resource.title.toLabel();
+                    ist.resource.inputPin.toLabel();
                     for (0..ist.tmpPin.len) |i| {
                         var tmpBuf: [10]u8 = undefined;
                         const st = std.fmt.bufPrintZ(&tmpBuf, "{d}", .{ist.tmpPin[i]}) catch "error";
                         rl.drawText(st, 100 + @as(i32, @intCast(i)) * 60, 200, 50, rl.Color.blue);
                     }
                     rl.drawRectangle(100 + @as(i32, @intCast(ist.index)) * 60, 260, 10, 10, rl.Color.red);
-                    ist.resource.change.draw();
 
+                    if (ist.resource.change.toButton()) return .Update;
                     const kcode = rl.getKeyPressed();
                     const vi: i32 = @intFromEnum(kcode) - 48;
                     switch (vi) {
                         0...9 => return .{ .PushNum = .{ .v = @as(u8, @intCast(vi)) } },
                         else => {},
-                    }
-                    if (rl.isMouseButtonPressed(rl.MouseButton.mouse_button_left)) {
-                        const x = rl.getMouseX();
-                        const y = rl.getMouseY();
-
-                        if (ist.resource.change.posInLabel(x, y)) {
-                            return .Update;
-                        }
                     }
                 }
             }
@@ -252,23 +213,38 @@ const Label = struct {
         self.str = str;
         self.sx = @as(i32, @intCast(str.len)) * (fontSize - 5);
     }
+    inline fn itof(i: i32) f32 {
+        return @floatFromInt(i);
+    }
+
+    pub fn toButton(self: *const Label) bool {
+        const v = g.guiButton(
+            .{
+                .x = itof(self.x),
+                .y = itof(self.y),
+                .width = itof(self.sx),
+                .height = itof(self.sy),
+            },
+            self.str,
+        );
+        if (v == 1) return true;
+        return false;
+    }
+
+    pub fn toLabel(self: *const Label) void {
+        _ = g.guiLabel(
+            .{
+                .x = itof(self.x),
+                .y = itof(self.y),
+                .width = itof(self.sx),
+                .height = itof(self.sy),
+            },
+            self.str,
+        );
+    }
 
     pub fn init(x: i32, y: i32, str: [:0]const u8) Label {
         return .{ .x = x, .y = y, .sx = @as(i32, @intCast(str.len)) * (fontSize - 5), .sy = fontSize, .str = str };
-    }
-
-    pub fn posInLabel(self: *const Label, posX: i32, posY: i32) bool {
-        return posX > self.x and posX < self.x + self.sx and
-            posY > self.y and posY < self.y + self.sy;
-    }
-
-    pub fn draw(self: *const Label) void {
-        rl.drawRectangle(self.x, self.y, self.sx, self.sy, rl.Color.gray);
-        if (self.posInLabel(rl.getMouseX(), rl.getMouseY())) {
-            rl.drawText(self.str, self.x, self.y, fontSize + 4, rl.Color.red);
-        } else {
-            rl.drawText(self.str, self.x, self.y, fontSize, rl.Color.black);
-        }
     }
 };
 
