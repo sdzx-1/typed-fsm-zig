@@ -33,6 +33,13 @@ const AtmSt = enum {
 
     const input = std.io.getStdIn().reader();
 
+    fn getLine(buf: []u8) ?[]u8 {
+        const res = input.readUntilDelimiterOrEof(buf, '\n') catch blk: {
+            break :blk null;
+        };
+        return res;
+    }
+
     pub fn readyMsg(end: AtmSt) type {
         return union(enum) {
             ExitAtm: W(end, .exit),
@@ -41,10 +48,7 @@ const AtmSt = enum {
             pub fn genMsg(buf: []u8) @This() {
                 while (true) {
                     std.debug.print("insert or exit: ", .{});
-                    const res = input.readUntilDelimiterOrEof(buf, '\n') catch blk: {
-                        break :blk null;
-                    };
-                    if (res) |line| {
+                    if (getLine(buf)) |line| {
                         if (std.mem.eql(u8, line, "insert")) {
                             return .InsertCard;
                         } else if (std.mem.eql(u8, line, "exit")) {
@@ -67,10 +71,7 @@ const AtmSt = enum {
             pub fn genMsg(buf: []u8, ist: *const InternalState) @This() {
                 while (true) {
                     std.debug.print("input pin: ", .{});
-                    const res = input.readUntilDelimiterOrEof(buf, '\n') catch blk: {
-                        break :blk null;
-                    };
-                    if (res) |line| {
+                    if (getLine(buf)) |line| {
                         const pres = std.fmt.parseInt(usize, line, 10) catch blk1: {
                             break :blk1 null;
                         };
@@ -101,10 +102,7 @@ const AtmSt = enum {
             pub fn genMsg(buf: []u8, _: *const InternalState) @This() {
                 while (true) {
                     std.debug.print("getAmount or disponse or eject or changePin: ", .{});
-                    const res = input.readUntilDelimiterOrEof(buf, '\n') catch blk: {
-                        break :blk null;
-                    };
-                    if (res) |line| {
+                    if (getLine(buf)) |line| {
                         if (std.mem.eql(u8, line, "changePin")) {
                             return .ChangePin;
                         } else if (std.mem.eql(u8, line, "getAmount")) {
@@ -132,11 +130,8 @@ const AtmSt = enum {
             pub fn genMsg(buf: []u8) @This() {
                 while (true) {
                     std.debug.print("input new pin: ", .{});
-                    const res = input.readUntilDelimiterOrEof(buf, '\n') catch blk: {
-                        break :blk null;
-                    };
 
-                    if (res) |line| {
+                    if (getLine(buf)) |line| {
                         const pres = std.fmt.parseInt(usize, line, 10) catch blk1: {
                             break :blk1 null;
                         };
