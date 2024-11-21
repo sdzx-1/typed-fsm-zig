@@ -36,8 +36,8 @@ pub fn build(b: *std.Build) void {
 
     {
         const exe = b.addExecutable(.{
-            .name = "atm",
-            .root_source_file = b.path("examples/atm.zig"),
+            .name = "atm-tui",
+            .root_source_file = b.path("examples/atm-tui.zig"),
             .target = target,
             .optimize = optimize,
         });
@@ -49,7 +49,26 @@ pub fn build(b: *std.Build) void {
         if (b.args) |args| {
             run_cmd.addArgs(args);
         }
-        const run_step = b.step("atm", "Run the app");
+        const run_step = b.step("atm-tui", "Run the app");
+        run_step.dependOn(&run_cmd.step);
+    }
+
+    {
+        const exe = b.addExecutable(.{
+            .name = "atm-gui",
+            .root_source_file = b.path("examples/atm-gui.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        const @"typed-fsm" = @This().getModule(b, target, optimize);
+        exe.root_module.addImport("typed-fsm", @"typed-fsm");
+        b.installArtifact(exe);
+        const run_cmd = b.addRunArtifact(exe);
+        run_cmd.step.dependOn(b.getInstallStep());
+        if (b.args) |args| {
+            run_cmd.addArgs(args);
+        }
+        const run_step = b.step("atm-gui", "Run the app");
         run_step.dependOn(&run_cmd.step);
     }
 }

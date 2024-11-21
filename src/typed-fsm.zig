@@ -8,6 +8,10 @@ pub fn Witness(T: type, end: T, start: T) type {
                 pub const wtype = T;
                 pub const wstart = start;
                 pub const wend = end;
+                pub fn render(_: @This()) @TypeOf(stru.render) {
+                    if (end == start) @compileError("Can't render");
+                    return stru.render;
+                }
                 pub fn getMsg(_: @This()) @TypeOf(stru.genMsg) {
                     if (end == start) @compileError("Can't getMsg");
                     return stru.genMsg;
