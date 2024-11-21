@@ -85,6 +85,9 @@ const AtmSt = enum {
                     ist.resource.insert.draw();
                     ist.resource.exit.draw();
 
+                    if (rl.isKeyPressed(rl.KeyboardKey.key_escape)) {
+                        return .ExitAtm;
+                    }
                     if (rl.isMouseButtonPressed(rl.MouseButton.mouse_button_left)) {
                         const x = rl.getMouseX();
                         const y = rl.getMouseY();
