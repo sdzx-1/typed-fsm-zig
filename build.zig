@@ -34,7 +34,7 @@ pub fn build(b: *std.Build) void {
         run_step.dependOn(&run_cmd.step);
     }
 
-    {
+    if (target.query.os_tag != .windows) {
         const exe = b.addExecutable(.{
             .name = "atm-tui",
             .root_source_file = b.path("examples/atm-tui.zig"),

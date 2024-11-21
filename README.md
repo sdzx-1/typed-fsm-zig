@@ -1,5 +1,5 @@
 
-# Demo atm-tui
+# Demo atm-tui (Cannot build in Windows!)
 ```
 zig build atm-tui
 ```
