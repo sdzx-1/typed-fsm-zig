@@ -28,6 +28,15 @@ const Resource = struct {
 };
 
 pub fn main() anyerror!void {
+
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // const allocator = gpa.allocator();
+    // var nlist = typedFsm.NodeList.init(allocator);
+    // defer nlist.deinit();
+    // var elist = typedFsm.EdgeList.init(allocator);
+    // defer elist.deinit();
+    // try typedFsm.graph(AtmSt, &nlist, &elist);
+
     // Initialization
     //--------------------------------------------------------------------------------------
     const screenWidth = 800;
