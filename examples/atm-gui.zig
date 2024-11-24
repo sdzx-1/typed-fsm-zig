@@ -7,28 +7,26 @@ const g = @import("raygui");
 
 const InternalState = struct {
     pin: [4]u8,
-    tmpPin: [4]u8,
-    index: usize = 0,
     times: usize,
     amount: usize,
-    buf: [100]u8,
-    resource: Resource,
 };
 
-const Resource = struct {
-    title: Label = Label.init(300, 20, "State: Ready"),
-    insert: Label = Label.init(100, 100, "Insert Card"),
-    exit: Label = Label.init(100, 160, "Exit"),
-    inputPin: Label = Label.init(100, 100, "Input pin:"),
-    check: Label = Label.init(100, 360, "Check"),
-    disponse: Label = Label.init(100, 230, "Disponse 10"),
-    changePin: Label = Label.init(100, 280, "ChangePin"),
-    eject: Label = Label.init(100, 330, "Eject"),
-    change: Label = Label.init(100, 360, "Change"),
+const resource = struct {
+    const insert: Label = Label.init(100, 100, "Insert Card");
+    const exit: Label = Label.init(100, 160, "Exit");
+    const inputPin: Label = Label.init(100, 100, "Input pin:");
+    const check: Label = Label.init(100, 360, "Check");
+    const disponse: Label = Label.init(100, 230, "Disponse 10");
+    const changePin: Label = Label.init(100, 280, "ChangePin");
+    const eject: Label = Label.init(100, 330, "Eject");
+    const change: Label = Label.init(100, 360, "Change");
 };
+
+pub fn title(st: [:0]const u8) void {
+    Label.init(300, 20, st).toLabel();
+}
 
 pub fn main() anyerror!void {
-
     // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     // const allocator = gpa.allocator();
     // var nlist = typedFsm.NodeList.init(allocator);
@@ -50,13 +48,10 @@ pub fn main() anyerror!void {
 
     var ist: InternalState = .{
         .pin = .{ 1, 2, 3, 4 },
-        .tmpPin = .{ 0, 0, 0, 0 },
         .times = 0,
         .amount = 10000,
-        .buf = undefined,
-        .resource = .{},
     };
-    const start = AtmSt.T(.ready){};
+    const start = AtmSt.EWitness(.ready){};
     g.guiSetStyle(.default, 16, 24);
     readyHander(start, &ist);
 }
@@ -68,10 +63,10 @@ const AtmSt = enum {
     session,
     changePin,
 
-    pub fn T(s: AtmSt) type {
+    pub fn EWitness(s: AtmSt) type {
         return Witness(AtmSt, .exit, s);
     }
-    fn W(end: AtmSt, s: AtmSt) type {
+    fn WitFn(end: AtmSt, s: AtmSt) type {
         return Witness(AtmSt, end, s);
     }
 
@@ -79,22 +74,19 @@ const AtmSt = enum {
         return void;
     }
 
-    const input = std.io.getStdIn().reader();
-
     pub fn readyMsg(end: AtmSt) type {
         return union(enum) {
-            ExitAtm: W(end, .exit),
-            InsertCard: W(end, .cardInserted),
+            ExitAtm: WitFn(end, .exit),
+            InsertCard: WitFn(end, .cardInserted),
 
-            pub fn genMsg(ist: *const InternalState) @This() {
+            pub fn genMsg() @This() {
                 while (true) {
-                    // render
                     rl.beginDrawing();
                     defer rl.endDrawing();
                     rl.clearBackground(rl.Color.white);
-                    ist.resource.title.toLabel();
-                    if (ist.resource.insert.toButton()) return .InsertCard;
-                    if (ist.resource.exit.toButton()) return .ExitAtm;
+                    title("Ready");
+                    if (resource.insert.toButton()) return .InsertCard;
+                    if (resource.exit.toButton()) return .ExitAtm;
                     if (rl.isKeyPressed(rl.KeyboardKey.key_escape)) return .ExitAtm;
                 }
             }
@@ -103,33 +95,32 @@ const AtmSt = enum {
 
     pub fn cardInsertedMsg(end: AtmSt) type {
         return union(enum) {
-            PushNum: struct { v: u8, wit: W(end, .cardInserted) = .{} },
-            Correct: W(end, .session),
-            Incorrect: W(end, .cardInserted),
-            EjectCard: W(end, .ready),
+            Correct: WitFn(end, .session),
+            Incorrect: WitFn(end, .cardInserted),
+            EjectCard: WitFn(end, .ready),
 
             pub fn genMsg(ist: *const InternalState) @This() {
+                var tmpPin: [4]u8 = .{ 0, 0, 0, 0 };
+                var index: usize = 0;
                 while (true) {
-
-                    // render
                     rl.beginDrawing();
                     defer rl.endDrawing();
                     rl.clearBackground(rl.Color.white);
-                    ist.resource.title.toLabel();
-                    ist.resource.inputPin.toLabel();
+                    title("CardInserted");
+                    resource.inputPin.toLabel();
 
-                    for (0..ist.tmpPin.len) |i| {
+                    for (0..tmpPin.len) |i| {
                         var tmpBuf: [10]u8 = undefined;
-                        const st = std.fmt.bufPrintZ(&tmpBuf, "{d}", .{ist.tmpPin[i]}) catch "error";
+                        const st = std.fmt.bufPrintZ(&tmpBuf, "{d}", .{tmpPin[i]}) catch "error";
                         rl.drawText(st, 100 + @as(i32, @intCast(i)) * 60, 200, 50, rl.Color.blue);
                     }
-                    rl.drawRectangle(100 + @as(i32, @intCast(ist.index)) * 60, 260, 10, 10, rl.Color.red);
+                    rl.drawRectangle(100 + @as(i32, @intCast(index)) * 60, 260, 10, 10, rl.Color.red);
                     var tmpBuf: [40]u8 = undefined;
                     const st = std.fmt.bufPrintZ(&tmpBuf, "test times: {d}", .{ist.times}) catch "error";
                     rl.drawText(st, 100, 290, 30, rl.Color.green);
 
-                    if (ist.resource.check.toButton()) {
-                        if (std.mem.eql(u8, &ist.pin, &ist.tmpPin)) {
+                    if (resource.check.toButton()) {
+                        if (std.mem.eql(u8, &ist.pin, &tmpPin)) {
                             return .Correct;
                         } else {
                             if (ist.times == 2) return .EjectCard;
@@ -140,7 +131,10 @@ const AtmSt = enum {
                     const kcode = rl.getKeyPressed();
                     const vi: i32 = @intFromEnum(kcode) - 48;
                     switch (vi) {
-                        0...9 => return .{ .PushNum = .{ .v = @as(u8, @intCast(vi)) } },
+                        0...9 => {
+                            tmpPin[index] = @as(u8, @intCast(vi));
+                            index = @mod(index + 1, 4);
+                        },
                         else => {},
                     }
                 }
@@ -150,26 +144,23 @@ const AtmSt = enum {
 
     pub fn sessionMsg(end: AtmSt) type {
         return union(enum) {
-            GetAmount: W(end, .session),
-            Disponse: struct { v: usize, wit: W(end, .session) = .{} },
-            EjectCard: W(end, .ready),
-            ChangePin: W(end, .changePin),
+            Disponse: struct { v: usize, wit: WitFn(end, .session) = .{} },
+            EjectCard: WitFn(end, .ready),
+            ChangePin: WitFn(end, .changePin),
 
             pub fn genMsg(ist: *const InternalState) @This() {
                 while (true) {
-
-                    // render
                     rl.beginDrawing();
                     defer rl.endDrawing();
                     rl.clearBackground(rl.Color.white);
-                    ist.resource.title.toLabel();
+                    title("Session");
 
                     var tmpBuf: [40]u8 = undefined;
                     const st = std.fmt.bufPrintZ(&tmpBuf, "amount: {d}", .{ist.amount}) catch "error";
                     rl.drawText(st, 100, 90, 30, rl.Color.green);
-                    if (ist.resource.disponse.toButton()) return .{ .Disponse = .{ .v = 10 } };
-                    if (ist.resource.changePin.toButton()) return .ChangePin;
-                    if (ist.resource.eject.toButton()) return .EjectCard;
+                    if (resource.disponse.toButton()) return .{ .Disponse = .{ .v = 10 } };
+                    if (resource.changePin.toButton()) return .ChangePin;
+                    if (resource.eject.toButton()) return .EjectCard;
                 }
             }
         };
@@ -177,30 +168,32 @@ const AtmSt = enum {
 
     pub fn changePinMsg(end: AtmSt) type {
         return union(enum) {
-            PushNum: struct { v: u8, wit: W(end, .changePin) = .{} },
-            Update: W(end, .ready),
+            Update: struct { v: [4]u8, wit: WitFn(end, .ready) = .{} },
 
-            pub fn genMsg(ist: *const InternalState) @This() {
+            pub fn genMsg() @This() {
+                var tmpPin: [4]u8 = .{ 0, 0, 0, 0 };
+                var index: usize = 0;
                 while (true) {
-
-                    // render
                     rl.beginDrawing();
                     defer rl.endDrawing();
                     rl.clearBackground(rl.Color.white);
-                    ist.resource.title.toLabel();
-                    ist.resource.inputPin.toLabel();
-                    for (0..ist.tmpPin.len) |i| {
+                    title("ChangePin");
+                    resource.inputPin.toLabel();
+                    for (0..tmpPin.len) |i| {
                         var tmpBuf: [10]u8 = undefined;
-                        const st = std.fmt.bufPrintZ(&tmpBuf, "{d}", .{ist.tmpPin[i]}) catch "error";
+                        const st = std.fmt.bufPrintZ(&tmpBuf, "{d}", .{tmpPin[i]}) catch "error";
                         rl.drawText(st, 100 + @as(i32, @intCast(i)) * 60, 200, 50, rl.Color.blue);
                     }
-                    rl.drawRectangle(100 + @as(i32, @intCast(ist.index)) * 60, 260, 10, 10, rl.Color.red);
+                    rl.drawRectangle(100 + @as(i32, @intCast(index)) * 60, 260, 10, 10, rl.Color.red);
 
-                    if (ist.resource.change.toButton()) return .Update;
+                    if (resource.change.toButton()) return .{ .Update = .{ .v = tmpPin } };
                     const kcode = rl.getKeyPressed();
                     const vi: i32 = @intFromEnum(kcode) - 48;
                     switch (vi) {
-                        0...9 => return .{ .PushNum = .{ .v = @as(u8, @intCast(vi)) } },
+                        0...9 => {
+                            tmpPin[index] = @as(u8, @intCast(vi));
+                            index = @mod(index + 1, 4);
+                        },
                         else => {},
                     }
                 }
@@ -258,30 +251,21 @@ const Label = struct {
 };
 
 // ready
-pub fn readyHander(comptime w: AtmSt.T(.ready), ist: *InternalState) void {
-    ist.resource.title.setStr("Ready");
-    switch (w.getMsg()(ist)) {
+pub fn readyHander(comptime w: AtmSt.EWitness(.ready), ist: *InternalState) void {
+    switch (w.getMsg()()) {
         .ExitAtm => |witness| {
             witness.terminal();
         },
         .InsertCard => |witness| {
             ist.times = 0;
-            ist.index = 0;
-            ist.tmpPin = .{ 0, 0, 0, 0 };
             @call(.always_tail, cardInsertedHander, .{ witness, ist });
         },
     }
 }
 
 // cardInserted,
-pub fn cardInsertedHander(comptime w: AtmSt.T(.cardInserted), ist: *InternalState) void {
-    ist.resource.title.setStr("CardInserted");
+pub fn cardInsertedHander(comptime w: AtmSt.EWitness(.cardInserted), ist: *InternalState) void {
     switch (w.getMsg()(ist)) {
-        .PushNum => |val| {
-            ist.tmpPin[ist.index] = val.v;
-            ist.index = @mod(ist.index + 1, 4);
-            @call(.always_tail, cardInsertedHander, .{ val.wit, ist });
-        },
         .Correct => |wit| {
             ist.times += 1;
             @call(.always_tail, sessionHander, .{ wit, ist });
@@ -297,13 +281,8 @@ pub fn cardInsertedHander(comptime w: AtmSt.T(.cardInserted), ist: *InternalStat
 }
 
 // session,
-pub fn sessionHander(comptime w: AtmSt.T(.session), ist: *InternalState) void {
-    ist.resource.title.setStr("Session");
+pub fn sessionHander(comptime w: AtmSt.EWitness(.session), ist: *InternalState) void {
     switch (w.getMsg()(ist)) {
-        .GetAmount => |wit| {
-            @call(.always_tail, sessionHander, .{ wit, ist });
-        },
-
         .Disponse => |val| {
             if (ist.amount >= val.v) {
                 ist.amount -= val.v;
@@ -316,23 +295,12 @@ pub fn sessionHander(comptime w: AtmSt.T(.session), ist: *InternalState) void {
             @call(.always_tail, readyHander, .{ wit, ist });
         },
         .ChangePin => |wit| {
-            ist.tmpPin = .{ 0, 0, 0, 0 };
-            @call(.always_tail, changePinHander, .{ wit, ist });
-        },
-    }
-}
-pub fn changePinHander(comptime w: AtmSt.T(.changePin), ist: *InternalState) void {
-    ist.resource.title.setStr("ChangePin");
-    switch (w.getMsg()(ist)) {
-        .Update => |wit1| {
-            ist.pin = ist.tmpPin;
-            @call(.always_tail, readyHander, .{ wit1, ist });
-        },
-
-        .PushNum => |val| {
-            ist.tmpPin[ist.index] = val.v;
-            ist.index = @mod(ist.index + 1, 4);
-            @call(.always_tail, changePinHander, .{ val.wit, ist });
+            switch (wit.getMsg()()) {
+                .Update => |val| {
+                    ist.pin = val.v;
+                    @call(.always_tail, readyHander, .{ val.wit, ist });
+                },
+            }
         },
     }
 }
