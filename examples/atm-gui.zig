@@ -27,13 +27,13 @@ pub fn title(st: [:0]const u8) void {
 }
 
 pub fn main() anyerror!void {
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // const allocator = gpa.allocator();
-    // var nlist = typedFsm.NodeList.init(allocator);
-    // defer nlist.deinit();
-    // var elist = typedFsm.EdgeList.init(allocator);
-    // defer elist.deinit();
-    // try typedFsm.graph(AtmSt, &nlist, &elist);
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    var nlist = typedFsm.NodeList.init(allocator);
+    defer nlist.deinit();
+    var elist = typedFsm.EdgeList.init(allocator);
+    defer elist.deinit();
+    try typedFsm.graph(AtmSt, &nlist, &elist);
 
     // Initialization
     //--------------------------------------------------------------------------------------
@@ -53,7 +53,7 @@ pub fn main() anyerror!void {
     };
     const start = AtmSt.EWitness(.ready){};
     g.guiSetStyle(.default, 16, 24);
-    readyHander(start, &ist);
+    readyHandler(start, &ist);
 }
 
 const AtmSt = enum {
@@ -61,7 +61,6 @@ const AtmSt = enum {
     ready,
     cardInserted,
     session,
-    changePin,
 
     pub fn EWitness(s: AtmSt) type {
         return Witness(AtmSt, .exit, s);
@@ -146,7 +145,7 @@ const AtmSt = enum {
         return union(enum) {
             Disponse: struct { v: usize, wit: WitFn(end, .session) = .{} },
             EjectCard: WitFn(end, .ready),
-            ChangePin: WitFn(end, .changePin),
+            // ChangePin: WitFn(end, .changePin),
 
             pub fn genMsg(ist: *const InternalState) @This() {
                 while (true) {
@@ -159,43 +158,7 @@ const AtmSt = enum {
                     const st = std.fmt.bufPrintZ(&tmpBuf, "amount: {d}", .{ist.amount}) catch "error";
                     rl.drawText(st, 100, 90, 30, rl.Color.green);
                     if (resource.disponse.toButton()) return .{ .Disponse = .{ .v = 10 } };
-                    if (resource.changePin.toButton()) return .ChangePin;
                     if (resource.eject.toButton()) return .EjectCard;
-                }
-            }
-        };
-    }
-
-    pub fn changePinMsg(end: AtmSt) type {
-        return union(enum) {
-            Update: struct { v: [4]u8, wit: WitFn(end, .ready) = .{} },
-
-            pub fn genMsg() @This() {
-                var tmpPin: [4]u8 = .{ 0, 0, 0, 0 };
-                var index: usize = 0;
-                while (true) {
-                    rl.beginDrawing();
-                    defer rl.endDrawing();
-                    rl.clearBackground(rl.Color.white);
-                    title("ChangePin");
-                    resource.inputPin.toLabel();
-                    for (0..tmpPin.len) |i| {
-                        var tmpBuf: [10]u8 = undefined;
-                        const st = std.fmt.bufPrintZ(&tmpBuf, "{d}", .{tmpPin[i]}) catch "error";
-                        rl.drawText(st, 100 + @as(i32, @intCast(i)) * 60, 200, 50, rl.Color.blue);
-                    }
-                    rl.drawRectangle(100 + @as(i32, @intCast(index)) * 60, 260, 10, 10, rl.Color.red);
-
-                    if (resource.change.toButton()) return .{ .Update = .{ .v = tmpPin } };
-                    const kcode = rl.getKeyPressed();
-                    const vi: i32 = @intFromEnum(kcode) - 48;
-                    switch (vi) {
-                        0...9 => {
-                            tmpPin[index] = @as(u8, @intCast(vi));
-                            index = @mod(index + 1, 4);
-                        },
-                        else => {},
-                    }
                 }
             }
         };
@@ -251,37 +214,37 @@ const Label = struct {
 };
 
 // ready
-pub fn readyHander(comptime w: AtmSt.EWitness(.ready), ist: *InternalState) void {
+pub fn readyHandler(comptime w: AtmSt.EWitness(.ready), ist: *InternalState) void {
     switch (w.getMsg()()) {
         .ExitAtm => |witness| {
             witness.terminal();
         },
         .InsertCard => |witness| {
             ist.times = 0;
-            @call(.always_tail, cardInsertedHander, .{ witness, ist });
+            @call(.always_tail, cardInsertedHandler, .{ witness, ist });
         },
     }
 }
 
 // cardInserted,
-pub fn cardInsertedHander(comptime w: AtmSt.EWitness(.cardInserted), ist: *InternalState) void {
+pub fn cardInsertedHandler(comptime w: AtmSt.EWitness(.cardInserted), ist: *InternalState) void {
     switch (w.getMsg()(ist)) {
         .Correct => |wit| {
             ist.times += 1;
-            @call(.always_tail, sessionHander, .{ wit, ist });
+            @call(.always_tail, sessionHandler, .{ wit, ist });
         },
         .Incorrect => |wit| {
             ist.times += 1;
-            @call(.always_tail, cardInsertedHander, .{ wit, ist });
+            @call(.always_tail, cardInsertedHandler, .{ wit, ist });
         },
         .EjectCard => |wit| {
-            @call(.always_tail, readyHander, .{ wit, ist });
+            @call(.always_tail, readyHandler, .{ wit, ist });
         },
     }
 }
 
 // session,
-pub fn sessionHander(comptime w: AtmSt.EWitness(.session), ist: *InternalState) void {
+pub fn sessionHandler(comptime w: AtmSt.EWitness(.session), ist: *InternalState) void {
     switch (w.getMsg()(ist)) {
         .Disponse => |val| {
             if (ist.amount >= val.v) {
@@ -289,18 +252,10 @@ pub fn sessionHander(comptime w: AtmSt.EWitness(.session), ist: *InternalState) 
             } else {
                 std.debug.print("insufficient balance\n", .{});
             }
-            @call(.always_tail, sessionHander, .{ val.wit, ist });
+            @call(.always_tail, sessionHandler, .{ val.wit, ist });
         },
         .EjectCard => |wit| {
-            @call(.always_tail, readyHander, .{ wit, ist });
-        },
-        .ChangePin => |wit| {
-            switch (wit.getMsg()()) {
-                .Update => |val| {
-                    ist.pin = val.v;
-                    @call(.always_tail, readyHander, .{ val.wit, ist });
-                },
-            }
+            @call(.always_tail, readyHandler, .{ wit, ist });
         },
     }
 }

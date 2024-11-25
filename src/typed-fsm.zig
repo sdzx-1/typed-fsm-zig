@@ -114,8 +114,8 @@ pub fn graph(T: type, nlist: *NodeList, elist: *EdgeList) !void {
     const cmd1 = [_][]const u8{ "eog", "graph_tmp.png" };
     var cp1 = std.process.Child.init(&cmd1, allocator);
     try cp1.spawn();
-    _ = try cp1.wait();
+    // _ = try cp1.wait();
 
-    try dir.deleteFile("graph_tmp.dot");
-    try dir.deleteFile("graph_tmp.png");
+    // try dir.deleteFile("graph_tmp.dot");
+    // try dir.deleteFile("graph_tmp.png");
 }
