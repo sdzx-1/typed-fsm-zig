@@ -1,3 +1,4 @@
+[typed-fsm-zig的详细介绍](./doc/介绍类型化有限状态机.md)
 
 # Demo atm-tui (Cannot build in Windows!)
 ```
