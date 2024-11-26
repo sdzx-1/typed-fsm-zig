@@ -10,7 +10,7 @@ pub fn main() !void {
         .buf = undefined,
     };
     const start = AtmSt.T(.ready){};
-    readyHander(start, &ist);
+    readyHandler(start, &ist);
 }
 
 const AtmSt = enum {
@@ -153,7 +153,7 @@ const InternalState = struct {
 };
 
 // ready
-pub fn readyHander(comptime w: AtmSt.T(.ready), ist: *InternalState) void {
+pub fn readyHandler(comptime w: AtmSt.T(.ready), ist: *InternalState) void {
     std.debug.print("current state: ready\n", .{});
     switch (w.getMsg()(&ist.buf)) {
         .ExitAtm => |witness| {
@@ -162,39 +162,39 @@ pub fn readyHander(comptime w: AtmSt.T(.ready), ist: *InternalState) void {
         },
         .InsertCard => |witness| {
             ist.times = 0;
-            @call(.always_tail, cardInsertedHander, .{ witness, ist });
+            @call(.always_tail, cardInsertedHandler, .{ witness, ist });
         },
     }
 }
 
 // cardInserted,
-pub fn cardInsertedHander(comptime w: AtmSt.T(.cardInserted), ist: *InternalState) void {
+pub fn cardInsertedHandler(comptime w: AtmSt.T(.cardInserted), ist: *InternalState) void {
     std.debug.print("current state: cardInserted\n", .{});
     switch (w.getMsg()(&ist.buf, ist)) {
         .Correct => |wit| {
             ist.times += 1;
             std.debug.print("The pin correct, goto session!\n", .{});
-            @call(.always_tail, sessionHander, .{ wit, ist });
+            @call(.always_tail, sessionHandler, .{ wit, ist });
         },
         .Incorrect => |wit| {
             ist.times += 1;
             std.debug.print("The pin incorrect, goto cardInserted!\n", .{});
-            @call(.always_tail, cardInsertedHander, .{ wit, ist });
+            @call(.always_tail, cardInsertedHandler, .{ wit, ist });
         },
         .EjectCard => |wit| {
             std.debug.print("Test times great than 3, eject card!\n", .{});
-            @call(.always_tail, readyHander, .{ wit, ist });
+            @call(.always_tail, readyHandler, .{ wit, ist });
         },
     }
 }
 
 // session,
-pub fn sessionHander(comptime w: AtmSt.T(.session), ist: *InternalState) void {
+pub fn sessionHandler(comptime w: AtmSt.T(.session), ist: *InternalState) void {
     std.debug.print("current state: session\n", .{});
     switch (w.getMsg()(&ist.buf, ist)) {
         .GetAmount => |wit| {
             std.debug.print("amount: {d}\n", .{ist.amount});
-            @call(.always_tail, sessionHander, .{ wit, ist });
+            @call(.always_tail, sessionHandler, .{ wit, ist });
         },
 
         .Disponse => |val| {
@@ -205,17 +205,17 @@ pub fn sessionHander(comptime w: AtmSt.T(.session), ist: *InternalState) void {
             } else {
                 std.debug.print("insufficient balance\n", .{});
             }
-            @call(.always_tail, sessionHander, .{ val.wit, ist });
+            @call(.always_tail, sessionHandler, .{ val.wit, ist });
         },
         .EjectCard => |wit| {
             std.debug.print("eject card\n", .{});
-            @call(.always_tail, readyHander, .{ wit, ist });
+            @call(.always_tail, readyHandler, .{ wit, ist });
         },
         .ChangePin => |wit| {
             switch (wit.getMsg()(&ist.buf)) {
                 .Update => |val| {
                     ist.pin = val.v;
-                    @call(.always_tail, sessionHander, .{ val.wit, ist });
+                    @call(.always_tail, sessionHandler, .{ val.wit, ist });
                 },
             }
         },

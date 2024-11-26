@@ -53,7 +53,7 @@ pub fn main() anyerror!void {
     };
     const start = AtmSt.EWitness(.ready){};
     g.guiSetStyle(.default, 16, 24);
-    readyHander(start, &ist);
+    readyHandler(start, &ist);
 }
 
 const AtmSt = enum {
@@ -251,37 +251,37 @@ const Label = struct {
 };
 
 // ready
-pub fn readyHander(comptime w: AtmSt.EWitness(.ready), ist: *InternalState) void {
+pub fn readyHandler(comptime w: AtmSt.EWitness(.ready), ist: *InternalState) void {
     switch (w.getMsg()()) {
         .ExitAtm => |witness| {
             witness.terminal();
         },
         .InsertCard => |witness| {
             ist.times = 0;
-            @call(.always_tail, cardInsertedHander, .{ witness, ist });
+            @call(.always_tail, cardInsertedHandler, .{ witness, ist });
         },
     }
 }
 
 // cardInserted,
-pub fn cardInsertedHander(comptime w: AtmSt.EWitness(.cardInserted), ist: *InternalState) void {
+pub fn cardInsertedHandler(comptime w: AtmSt.EWitness(.cardInserted), ist: *InternalState) void {
     switch (w.getMsg()(ist)) {
         .Correct => |wit| {
             ist.times += 1;
-            @call(.always_tail, sessionHander, .{ wit, ist });
+            @call(.always_tail, sessionHandler, .{ wit, ist });
         },
         .Incorrect => |wit| {
             ist.times += 1;
-            @call(.always_tail, cardInsertedHander, .{ wit, ist });
+            @call(.always_tail, cardInsertedHandler, .{ wit, ist });
         },
         .EjectCard => |wit| {
-            @call(.always_tail, readyHander, .{ wit, ist });
+            @call(.always_tail, readyHandler, .{ wit, ist });
         },
     }
 }
 
 // session,
-pub fn sessionHander(comptime w: AtmSt.EWitness(.session), ist: *InternalState) void {
+pub fn sessionHandler(comptime w: AtmSt.EWitness(.session), ist: *InternalState) void {
     switch (w.getMsg()(ist)) {
         .Disponse => |val| {
             if (ist.amount >= val.v) {
@@ -289,16 +289,16 @@ pub fn sessionHander(comptime w: AtmSt.EWitness(.session), ist: *InternalState) 
             } else {
                 std.debug.print("insufficient balance\n", .{});
             }
-            @call(.always_tail, sessionHander, .{ val.wit, ist });
+            @call(.always_tail, sessionHandler, .{ val.wit, ist });
         },
         .EjectCard => |wit| {
-            @call(.always_tail, readyHander, .{ wit, ist });
+            @call(.always_tail, readyHandler, .{ wit, ist });
         },
         .ChangePin => |wit| {
             switch (wit.getMsg()()) {
                 .Update => |val| {
                     ist.pin = val.v;
-                    @call(.always_tail, readyHander, .{ val.wit, ist });
+                    @call(.always_tail, readyHandler, .{ val.wit, ist });
                 },
             }
         },
