@@ -52,7 +52,7 @@ pub fn main() anyerror!void {
         .amount = 10000,
     };
     const start = AtmSt.EWitness(.ready){};
-    g.guiSetStyle(.default, 16, 24);
+    g.guiSetStyle(.default, g.GuiDefaultProperty.text_size, 24);
     readyHandler(start, &ist);
 }
 
@@ -87,7 +87,7 @@ const AtmSt = enum {
                     title("Ready");
                     if (resource.insert.toButton()) return .InsertCard;
                     if (resource.exit.toButton()) return .ExitAtm;
-                    if (rl.isKeyPressed(rl.KeyboardKey.key_escape)) return .ExitAtm;
+                    if (rl.isKeyPressed(rl.KeyboardKey.escape)) return .ExitAtm;
                 }
             }
         };
