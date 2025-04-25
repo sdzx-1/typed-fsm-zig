@@ -27,12 +27,15 @@ pub fn title(st: [:0]const u8) void {
 }
 
 pub fn main() anyerror!void {
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // const allocator = gpa.allocator();
-    // var nlist = typedFsm.NodeList.init(allocator);
-    // defer nlist.deinit();
-    // var elist = typedFsm.EdgeList.init(allocator);
-    // defer elist.deinit();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    var nlist = typedFsm.NodeList.init(allocator);
+    defer nlist.deinit();
+    var elist = typedFsm.EdgeList.init(allocator);
+    defer elist.deinit();
+
+    _ = try std.Thread.spawn(.{ .allocator = allocator }, typedFsm.graph, .{ AtmSt, &nlist, &elist });
+
     // try typedFsm.graph(AtmSt, &nlist, &elist);
 
     // Initialization
