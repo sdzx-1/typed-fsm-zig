@@ -90,7 +90,7 @@ const AtmSt = enum {
                     rl.clearBackground(rl.Color.white);
                     title("Ready");
                     if (resource.insert.toButton()) return .InsertCard;
-                    if (resource.exit.toButton()) return .ExitAtm;
+                    if (resource.exit.toButton() or rl.windowShouldClose()) return .ExitAtm;
                     if (rl.isKeyPressed(rl.KeyboardKey.escape)) return .ExitAtm;
                 }
             }
