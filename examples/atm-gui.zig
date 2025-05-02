@@ -29,6 +29,7 @@ pub fn title(st: [:0]const u8) void {
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
+
     var nlist = typedFsm.NodeList.init(allocator);
     defer nlist.deinit();
     var elist = typedFsm.EdgeList.init(allocator);
@@ -55,7 +56,7 @@ pub fn main() anyerror!void {
         .amount = 10000,
     };
     const start = AtmSt.EWitness(.ready){};
-    g.guiSetStyle(.default, g.GuiDefaultProperty.text_size, 24);
+    g.setStyle(.default, .{ .default = .text_size }, 24);
     readyHandler(start, &ist);
 }
 
@@ -223,7 +224,7 @@ const Label = struct {
     }
 
     pub fn toButton(self: *const Label) bool {
-        const v = g.guiButton(
+        const v = g.button(
             .{
                 .x = itof(self.x),
                 .y = itof(self.y),
@@ -232,12 +233,12 @@ const Label = struct {
             },
             self.str,
         );
-        if (v == 1) return true;
+        if (v) return true;
         return false;
     }
 
     pub fn toLabel(self: *const Label) void {
-        _ = g.guiLabel(
+        _ = g.label(
             .{
                 .x = itof(self.x),
                 .y = itof(self.y),
