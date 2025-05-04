@@ -1,62 +1,99 @@
 const std = @import("std");
 const typedFsm = @import("typed-fsm");
 const Witness = typedFsm.Witness;
+const zgui = @import("zgui");
+const glfw = @import("zglfw");
+const zopengl = @import("zopengl");
 
-const rl = @import("raylib");
-const g = @import("raygui");
+const content_dir = @import("build_options").content_dir;
+const window_titlw = "atm";
+const gl = zopengl.bindings;
+
+const Window = glfw.Window;
 
 const InternalState = struct {
     pin: [4]u8,
-    times: usize,
     amount: usize,
+    window: *Window,
+    try_times: u8 = 0,
 };
 
-const resource = struct {
-    const insert: Label = Label.init(100, 100, "Insert Card");
-    const exit: Label = Label.init(100, 160, "Exit");
-    const inputPin: Label = Label.init(100, 100, "Input pin:");
-    const check: Label = Label.init(100, 360, "Check");
-    const disponse: Label = Label.init(100, 230, "Disponse 10");
-    const changePin: Label = Label.init(100, 280, "ChangePin");
-    const eject: Label = Label.init(100, 330, "Eject");
-    const change: Label = Label.init(100, 360, "Change");
-};
-
-pub fn title(st: [:0]const u8) void {
-    Label.init(300, 20, st).toLabel();
+fn init(window: *Window) void {
+    glfw.pollEvents();
+    gl.clearBufferfv(gl.COLOR, 0, &[_]f32{ 0.2, 0.2, 0, 1.0 });
+    const fb_size = window.getFramebufferSize();
+    zgui.backend.newFrame(@intCast(fb_size[0]), @intCast(fb_size[1]));
+    zgui.setNextWindowPos(.{ .x = 0, .y = 0 });
+    zgui.setNextWindowSize(.{
+        .w = @floatFromInt(fb_size[0]),
+        .h = @floatFromInt(fb_size[1]),
+    });
 }
 
 pub fn main() anyerror!void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+    var gpa_instance = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa = gpa_instance.allocator();
 
-    var nlist = typedFsm.NodeList.init(allocator);
+    var nlist = typedFsm.NodeList.init(gpa);
     defer nlist.deinit();
-    var elist = typedFsm.EdgeList.init(allocator);
+    var elist = typedFsm.EdgeList.init(gpa);
     defer elist.deinit();
 
-    _ = try std.Thread.spawn(.{ .allocator = allocator }, typedFsm.graph, .{ AtmSt, &nlist, &elist });
+    _ = try std.Thread.spawn(.{ .allocator = gpa }, typedFsm.graph, .{ AtmSt, &nlist, &elist });
 
-    // try typedFsm.graph(AtmSt, &nlist, &elist);
+    try glfw.init();
+    defer glfw.terminate();
 
-    // Initialization
-    //--------------------------------------------------------------------------------------
-    const screenWidth = 800;
-    const screenHeight = 450;
+    {
+        var buffer: [1024]u8 = undefined;
+        const path = std.fs.selfExeDirPath(buffer[0..]) catch ".";
+        std.posix.chdir(path) catch {};
+    }
 
-    rl.initWindow(screenWidth, screenHeight, "ATM example");
-    defer rl.closeWindow(); // Close window and OpenGL context
+    const gl_major = 4;
+    const gl_minor = 0;
 
-    rl.setTargetFPS(60); // Set our game to run at 60 frames-per-second
-    //--------------------------------------------------------------------------------------
+    glfw.windowHint(.context_version_major, gl_major);
+    glfw.windowHint(.context_version_minor, gl_minor);
+    glfw.windowHint(.opengl_profile, .opengl_core_profile);
+    glfw.windowHint(.opengl_forward_compat, true);
+    glfw.windowHint(.client_api, .opengl_api);
+    glfw.windowHint(.doublebuffer, true);
+
+    const window = try glfw.Window.create(400, 400, window_titlw, null);
+    defer window.destroy();
+
+    glfw.makeContextCurrent(window);
+    glfw.swapInterval(1);
+
+    try zopengl.loadCoreProfile(glfw.getProcAddress, gl_major, gl_minor);
+
+    zgui.init(gpa);
+    defer zgui.deinit();
+
+    const scale_factor = scale_factor: {
+        const scale = window.getContentScale();
+        break :scale_factor @max(scale[0], scale[1]);
+    };
+
+    _ = zgui.io.addFontFromFileWithConfig(
+        content_dir ++ "FiraMono.ttf",
+        std.math.floor(16.0 * scale_factor),
+        null,
+        null,
+    );
+
+    zgui.getStyle().scaleAllSizes(scale_factor);
+
+    zgui.backend.init(window);
+    defer zgui.backend.deinit();
 
     var ist: InternalState = .{
         .pin = .{ 1, 2, 3, 4 },
-        .times = 0,
         .amount = 10000,
+        .window = window,
     };
     const start = AtmSt.EWitness(.ready){};
-    g.setStyle(.default, .{ .default = .text_size }, 24);
     readyHandler(start, &ist);
 }
 
@@ -64,204 +101,208 @@ const AtmSt = enum {
     exit,
     ready,
     cardInserted,
+    check,
     session,
     changePin,
 
     pub fn EWitness(s: AtmSt) type {
         return Witness(AtmSt, .exit, s);
     }
-    fn WitFn(end: AtmSt, s: AtmSt) type {
-        return Witness(AtmSt, end, s);
+
+    pub fn exitST() type {
+        return union(enum) {};
     }
 
-    pub fn exitMsg(_: AtmSt) type {
-        return void;
-    }
-
-    pub fn readyMsg(end: AtmSt) type {
+    pub fn readyST() type {
         return union(enum) {
-            ExitAtm: WitFn(end, .exit),
-            InsertCard: WitFn(end, .cardInserted),
+            ExitAtm: EWitness(.exit),
+            InsertCard: EWitness(.cardInserted),
 
-            pub fn genMsg() @This() {
+            pub fn genMsg(window: *Window) @This() {
                 while (true) {
-                    rl.beginDrawing();
-                    defer rl.endDrawing();
-                    rl.clearBackground(rl.Color.white);
-                    title("Ready");
-                    if (resource.insert.toButton()) return .InsertCard;
-                    if (resource.exit.toButton() or rl.windowShouldClose()) return .ExitAtm;
-                    if (rl.isKeyPressed(rl.KeyboardKey.escape)) return .ExitAtm;
-                }
-            }
-        };
-    }
-
-    pub fn cardInsertedMsg(end: AtmSt) type {
-        return union(enum) {
-            Correct: WitFn(end, .session),
-            Incorrect: WitFn(end, .cardInserted),
-            EjectCard: WitFn(end, .ready),
-
-            pub fn genMsg(ist: *const InternalState) @This() {
-                var tmpPin: [4]u8 = .{ 0, 0, 0, 0 };
-                var index: usize = 0;
-                while (true) {
-                    rl.beginDrawing();
-                    defer rl.endDrawing();
-                    rl.clearBackground(rl.Color.white);
-                    title("CardInserted");
-                    resource.inputPin.toLabel();
-
-                    for (0..tmpPin.len) |i| {
-                        var tmpBuf: [10]u8 = undefined;
-                        const st = std.fmt.bufPrintZ(&tmpBuf, "{d}", .{tmpPin[i]}) catch "error";
-                        rl.drawText(st, 100 + @as(i32, @intCast(i)) * 60, 200, 50, rl.Color.blue);
+                    init(window);
+                    defer {
+                        zgui.backend.draw();
+                        window.swapBuffers();
                     }
-                    rl.drawRectangle(100 + @as(i32, @intCast(index)) * 60, 260, 10, 10, rl.Color.red);
-                    var tmpBuf: [40]u8 = undefined;
-                    const st = std.fmt.bufPrintZ(&tmpBuf, "test times: {d}", .{ist.times}) catch "error";
-                    rl.drawText(st, 100, 290, 30, rl.Color.green);
 
-                    if (resource.check.toButton()) {
-                        if (std.mem.eql(u8, &ist.pin, &tmpPin)) {
-                            return .Correct;
-                        } else {
-                            if (ist.times == 2) return .EjectCard;
-                            return .Incorrect;
+                    if (window.shouldClose() or
+                        window.getKey(.q) == .press or
+                        window.getKey(.escape) == .press) return .ExitAtm;
+
+                    {
+                        _ = zgui.begin("ready", .{ .flags = .{
+                            .no_collapse = true,
+                            .no_saved_settings = true,
+                            .no_move = true,
+                            .no_resize = true,
+                        } });
+                        defer zgui.end();
+                        if (zgui.button("Isnert card", .{})) {
+                            return .InsertCard;
+                        }
+                        if (zgui.button("Exit!", .{})) {
+                            return .ExitAtm;
                         }
                     }
-
-                    const kcode = rl.getKeyPressed();
-                    const vi: i32 = @intFromEnum(kcode) - 48;
-                    switch (vi) {
-                        0...9 => {
-                            tmpPin[index] = @as(u8, @intCast(vi));
-                            index = @mod(index + 1, 4);
-                        },
-                        else => {},
-                    }
                 }
             }
         };
     }
 
-    pub fn sessionMsg(end: AtmSt) type {
+    pub fn cardInsertedST() type {
         return union(enum) {
-            Disponse: struct { v: usize, wit: WitFn(end, .session) = .{} },
-            EjectCard: WitFn(end, .ready),
-            ChangePin: WitFn(end, .changePin),
+            CheckPin: struct { wit: EWitness(.check) = .{}, v: [4]u8 },
 
-            pub fn genMsg(ist: *const InternalState) @This() {
+            pub fn genMsg(window: *Window, try_times: u8) @This() {
+                var tmpPin: [4:0]u8 = .{ 0, 0, 0, 0 };
                 while (true) {
-                    rl.beginDrawing();
-                    defer rl.endDrawing();
-                    rl.clearBackground(rl.Color.white);
-                    title("Session");
+                    init(window);
+                    defer {
+                        zgui.backend.draw();
+                        window.swapBuffers();
+                    }
 
-                    var tmpBuf: [40]u8 = undefined;
-                    const st = std.fmt.bufPrintZ(&tmpBuf, "amount: {d}", .{ist.amount}) catch "error";
-                    rl.drawText(st, 100, 90, 30, rl.Color.green);
-                    if (resource.disponse.toButton()) return .{ .Disponse = .{ .v = 10 } };
-                    if (resource.changePin.toButton()) return .ChangePin;
-                    if (resource.eject.toButton()) return .EjectCard;
+                    {
+                        _ = zgui.begin("Insert Card", .{ .flags = .{
+                            .no_collapse = true,
+                            .no_saved_settings = true,
+                            .no_move = true,
+                            .no_resize = true,
+                        } });
+                        defer zgui.end();
+
+                        _ = zgui.inputText("password", .{
+                            .buf = &tmpPin,
+                            .flags = .{ .password = true, .chars_decimal = true },
+                        });
+
+                        if (zgui.button("Sub", .{})) {
+                            for (0..4) |i| tmpPin[i] -|= 48;
+                            return .{ .CheckPin = .{ .v = tmpPin } };
+                        }
+
+                        zgui.text("try times: {d}", .{try_times});
+                    }
                 }
             }
         };
     }
 
-    pub fn changePinMsg(end: AtmSt) type {
+    pub fn checkST() type {
         return union(enum) {
-            Update: struct { v: [4]u8, wit: WitFn(end, .ready) = .{} },
+            Correct: AtmSt.EWitness(.session),
+            Incorrect: AtmSt.EWitness(.cardInserted),
+            EjectCard: AtmSt.EWitness(.ready),
 
-            pub fn genMsg() @This() {
-                var tmpPin: [4]u8 = .{ 0, 0, 0, 0 };
-                var index: usize = 0;
+            pub fn genMsg(
+                ist: *InternalState,
+                tmpPin: [4]u8,
+            ) @This() {
+                defer ist.try_times += 1;
+                if (std.mem.eql(u8, &ist.pin, &tmpPin)) {
+                    ist.try_times = 0;
+                    return .Correct;
+                } else if (ist.try_times == 2) {
+                    ist.try_times = 0;
+                    return .EjectCard;
+                } else {
+                    return .Incorrect;
+                }
+            }
+        };
+    }
+
+    pub fn sessionST() type {
+        return union(enum) {
+            Disponse: struct { v: usize, wit: EWitness(.session) = .{} },
+            EjectCard: EWitness(.ready),
+            ChangePin: EWitness(.changePin),
+
+            pub fn genMsg(window: *Window, amount: usize) @This() {
+                var dispVal: i32 = @divTrunc(@as(i32, @intCast(amount)), 2);
                 while (true) {
-                    rl.beginDrawing();
-                    defer rl.endDrawing();
-                    rl.clearBackground(rl.Color.white);
-                    title("ChangePin");
-                    resource.inputPin.toLabel();
-                    for (0..tmpPin.len) |i| {
-                        var tmpBuf: [10]u8 = undefined;
-                        const st = std.fmt.bufPrintZ(&tmpBuf, "{d}", .{tmpPin[i]}) catch "error";
-                        rl.drawText(st, 100 + @as(i32, @intCast(i)) * 60, 200, 50, rl.Color.blue);
+                    init(window);
+                    defer {
+                        zgui.backend.draw();
+                        window.swapBuffers();
                     }
-                    rl.drawRectangle(100 + @as(i32, @intCast(index)) * 60, 260, 10, 10, rl.Color.red);
 
-                    if (resource.change.toButton()) return .{ .Update = .{ .v = tmpPin } };
-                    const kcode = rl.getKeyPressed();
-                    const vi: i32 = @intFromEnum(kcode) - 48;
-                    switch (vi) {
-                        0...9 => {
-                            tmpPin[index] = @as(u8, @intCast(vi));
-                            index = @mod(index + 1, 4);
-                        },
-                        else => {},
+                    {
+                        _ = zgui.begin("Session", .{ .flags = .{
+                            .no_collapse = true,
+                            .no_saved_settings = true,
+                            .no_move = true,
+                            .no_resize = true,
+                        } });
+                        defer zgui.end();
+
+                        zgui.text("amount: {d}", .{amount});
+                        _ = zgui.sliderInt(
+                            "disponse value",
+                            .{ .v = &dispVal, .min = 0, .max = @intCast(amount) },
+                        );
+
+                        if (zgui.button("Disponse", .{})) {
+                            return .{ .Disponse = .{ .v = @intCast(dispVal) } };
+                        }
+
+                        if (zgui.button("ChangePin", .{})) {
+                            return .ChangePin;
+                        }
+                        if (zgui.button("Eject card", .{})) {
+                            return .EjectCard;
+                        }
                     }
                 }
             }
         };
     }
-};
 
-const Label = struct {
-    x: i32,
-    y: i32,
-    sx: i32,
-    sy: i32,
-    str: [:0]const u8,
+    pub fn changePinST() type {
+        return union(enum) {
+            Update: struct { v: [4]u8, wit: EWitness(.ready) = .{} },
 
-    const fontSize = 30;
+            pub fn genMsg(window: *Window) @This() {
+                var tmpPin: [4:0]u8 = .{ 0, 0, 0, 0 };
+                while (true) {
+                    init(window);
+                    defer {
+                        zgui.backend.draw();
+                        window.swapBuffers();
+                    }
 
-    pub fn setStr(self: *Label, str: [:0]const u8) void {
-        self.str = str;
-        self.sx = @as(i32, @intCast(str.len)) * (fontSize - 5);
-    }
-    inline fn itof(i: i32) f32 {
-        return @floatFromInt(i);
-    }
+                    {
+                        _ = zgui.begin("ChangePin", .{ .flags = .{
+                            .no_collapse = true,
+                            .no_saved_settings = true,
+                            .no_move = true,
+                            .no_resize = true,
+                        } });
+                        defer zgui.end();
+                        _ = zgui.inputText("password", .{
+                            .buf = &tmpPin,
+                            .flags = .{ .password = true, .chars_decimal = true },
+                        });
 
-    pub fn toButton(self: *const Label) bool {
-        const v = g.button(
-            .{
-                .x = itof(self.x),
-                .y = itof(self.y),
-                .width = itof(self.sx),
-                .height = itof(self.sy),
-            },
-            self.str,
-        );
-        if (v) return true;
-        return false;
-    }
-
-    pub fn toLabel(self: *const Label) void {
-        _ = g.label(
-            .{
-                .x = itof(self.x),
-                .y = itof(self.y),
-                .width = itof(self.sx),
-                .height = itof(self.sy),
-            },
-            self.str,
-        );
-    }
-
-    pub fn init(x: i32, y: i32, str: [:0]const u8) Label {
-        return .{ .x = x, .y = y, .sx = @as(i32, @intCast(str.len)) * (fontSize - 5), .sy = fontSize, .str = str };
+                        if (zgui.button("Sub", .{})) {
+                            for (0..4) |i| tmpPin[i] -|= 48;
+                            return .{ .Update = .{ .v = tmpPin } };
+                        }
+                    }
+                }
+            }
+        };
     }
 };
 
 // ready
 pub fn readyHandler(comptime w: AtmSt.EWitness(.ready), ist: *InternalState) void {
-    switch (w.getMsg()()) {
+    switch (w.genMsg()(ist.window)) {
         .ExitAtm => |witness| {
             witness.terminal();
         },
         .InsertCard => |witness| {
-            ist.times = 0;
             @call(.always_tail, cardInsertedHandler, .{ witness, ist });
         },
     }
@@ -269,37 +310,32 @@ pub fn readyHandler(comptime w: AtmSt.EWitness(.ready), ist: *InternalState) voi
 
 // cardInserted,
 pub fn cardInsertedHandler(comptime w: AtmSt.EWitness(.cardInserted), ist: *InternalState) void {
-    switch (w.getMsg()(ist)) {
-        .Correct => |wit| {
-            ist.times += 1;
-            @call(.always_tail, sessionHandler, .{ wit, ist });
-        },
-        .Incorrect => |wit| {
-            ist.times += 1;
-            @call(.always_tail, cardInsertedHandler, .{ wit, ist });
-        },
-        .EjectCard => |wit| {
-            @call(.always_tail, readyHandler, .{ wit, ist });
+    switch (w.genMsg()(ist.window, ist.try_times)) {
+        .CheckPin => |val| {
+            switch (val.wit.genMsg()(ist, val.v)) {
+                .Correct => |wit| @call(.always_tail, sessionHandler, .{ wit, ist }),
+                .Incorrect => |wit| @call(.always_tail, cardInsertedHandler, .{ wit, ist }),
+                .EjectCard => |wit| @call(.always_tail, readyHandler, .{ wit, ist }),
+            }
         },
     }
 }
 
 // session,
 pub fn sessionHandler(comptime w: AtmSt.EWitness(.session), ist: *InternalState) void {
-    switch (w.getMsg()(ist)) {
+    switch (w.genMsg()(ist.window, ist.amount)) {
         .Disponse => |val| {
             if (ist.amount >= val.v) {
                 ist.amount -= val.v;
+                @call(.always_tail, sessionHandler, .{ val.wit, ist });
             } else {
                 std.debug.print("insufficient balance\n", .{});
+                @call(.always_tail, sessionHandler, .{ val.wit, ist });
             }
-            @call(.always_tail, sessionHandler, .{ val.wit, ist });
         },
-        .EjectCard => |wit| {
-            @call(.always_tail, readyHandler, .{ wit, ist });
-        },
+        .EjectCard => |wit| @call(.always_tail, readyHandler, .{ wit, ist }),
         .ChangePin => |wit| {
-            switch (wit.getMsg()()) {
+            switch (wit.genMsg()(ist.window)) {
                 .Update => |val| {
                     ist.pin = val.v;
                     @call(.always_tail, readyHandler, .{ val.wit, ist });

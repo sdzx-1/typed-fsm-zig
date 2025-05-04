@@ -5,21 +5,29 @@ pub fn Witness(T: type, end: T, start: T) type {
         .@"enum" => |tenum| {
             const i: usize = @intFromEnum(start);
             const ename = tenum.fields[i].name;
-            const stru = @field(T, ename ++ "Msg")(end);
-            return struct {
-                pub const witness_spec_type = T;
-                pub const witness_spec_start = start;
-                pub const witness_spec_end = end;
-                pub fn getMsg(_: @This()) @TypeOf(stru.genMsg) {
-                    if (end == start) @compileError("Can't getMsg");
-                    return stru.genMsg;
-                }
 
-                pub fn terminal(_: @This()) void {
-                    if (end != start) @compileError("Can't terminal");
-                    return {};
-                }
-            };
+            const stru = @field(T, ename ++ "ST")();
+            if (!@hasDecl(stru, "genMsg") and end == start) {
+                return struct {
+                    pub const witness_spec_type = T;
+                    pub const witness_spec_start = start;
+                    pub const witness_spec_end = end;
+
+                    pub fn terminal(_: @This()) void {
+                        return {};
+                    }
+                };
+            } else if (@hasDecl(stru, "genMsg") and end != start) {
+                return struct {
+                    pub const witness_spec_type = T;
+                    pub const witness_spec_start = start;
+                    pub const witness_spec_end = end;
+
+                    pub fn genMsg(_: @This()) @TypeOf(stru.genMsg) {
+                        return stru.genMsg;
+                    }
+                };
+            } else @compileError("Error: not impl genMsg!");
         },
         else => @compileError("The type not support, it must be enum"),
     }
@@ -47,28 +55,30 @@ pub fn graph(T: type, nlist: *NodeList, elist: *EdgeList) !void {
             inline for (e.fields) |f| {
                 const fname = f.name;
                 try nlist.append(.{ .name = f.name, .id = f.value });
-                const tfun = @field(T, fname ++ "Msg");
-                const field = @field(T, fname);
-                const vt = tfun(field);
-                switch (@typeInfo(vt)) {
+                const stru = @field(T, fname ++ "ST")();
+                switch (@typeInfo(stru)) {
                     .@"union" => |u| {
                         inline for (0..u.fields.len) |i| {
-                            const t0 = u.fields[i].type;
+                            const t_level0 = u.fields[i].type;
                             const tname = u.fields[i].name;
-                            if (@hasDecl(t0, wstart)) {
-                                const RT = @field(t0, wstart);
-                                const ii = @intFromEnum(RT);
-                                try elist.append(.{ .name = tname, .start = f.value, .end = ii });
+                            if (@hasDecl(t_level0, wstart)) {
+                                try elist.append(.{
+                                    .name = tname,
+                                    .start = f.value,
+                                    .end = @intFromEnum(@field(t_level0, wstart)),
+                                });
                             } else blk: {
-                                switch (@typeInfo(t0)) {
-                                    .@"struct" => |st1| {
-                                        inline for (st1.fields) |fd| {
+                                switch (@typeInfo(t_level0)) {
+                                    .@"struct" => |stru1| {
+                                        inline for (stru1.fields) |fd| {
                                             switch (@typeInfo(fd.type)) {
                                                 .@"struct" => {
                                                     if (@hasDecl(fd.type, wstart)) {
-                                                        const RT = @field(fd.type, wstart);
-                                                        const ii = @intFromEnum(RT);
-                                                        try elist.append(.{ .name = tname, .start = f.value, .end = ii });
+                                                        try elist.append(.{
+                                                            .name = tname,
+                                                            .start = f.value,
+                                                            .end = @intFromEnum(@field(fd.type, wstart)),
+                                                        });
                                                         break :blk;
                                                     }
                                                 },
@@ -82,7 +92,6 @@ pub fn graph(T: type, nlist: *NodeList, elist: *EdgeList) !void {
                             }
                         }
                     },
-                    .void => {},
                     else => unreachable,
                 }
             }
@@ -105,17 +114,17 @@ pub fn graph(T: type, nlist: *NodeList, elist: *EdgeList) !void {
     file.close();
 
     // dot -Tpng tmp.dot -o tmp.png
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    const cmd = [_][]const u8{ "dot", "-Tpng", "graph_tmp.dot", "-o", "graph_tmp.png" };
-    var cp = std.process.Child.init(&cmd, allocator);
-    try cp.spawn();
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // const allocator = gpa.allocator();
+    // const cmd = [_][]const u8{ "dot", "-Tpng", "graph_tmp.dot", "-o", "graph_tmp.png" };
+    // var cp = std.process.Child.init(&cmd, allocator);
+    // try cp.spawn();
 
-    const cmd1 = [_][]const u8{ "eog", "graph_tmp.png" };
-    var cp1 = std.process.Child.init(&cmd1, allocator);
-    try cp1.spawn();
-    _ = try cp1.wait();
+    // const cmd1 = [_][]const u8{ "eog", "graph_tmp.png" };
+    // var cp1 = std.process.Child.init(&cmd1, allocator);
+    // try cp1.spawn();
+    // _ = try cp1.wait();
 
-    try dir.deleteFile("graph_tmp.dot");
-    try dir.deleteFile("graph_tmp.png");
+    // try dir.deleteFile("graph_tmp.dot");
+    // try dir.deleteFile("graph_tmp.png");
 }

@@ -24,9 +24,21 @@
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
     .dependencies = .{
-        .raylib_zig = .{
-            .url = "git+https://github.com/Not-Nik/raylib-zig?ref=devel#2e60ac0127b84e0d6b34343ef5f682465705fc80",
-            .hash = "raylib_zig-5.6.0-dev-KE8REGMrBQCs5X69dptNzjw9Z7MYM1fgdaKrnuKf8zyr",
+        .zglfw = .{
+            .url = "git+https://github.com/zig-gamedev/zglfw#fa12b57541976561358c850337af8d08647879d6",
+            .hash = "zglfw-0.10.0-dev-zgVDNJKcIQDR2-i-qz-FlR6uUdODN0DNPQA9X1G034qr",
+        },
+        .zopengl = .{
+            .url = "git+https://github.com/zig-gamedev/zopengl#27f5f228bc1f6da4a4f6acaca07d1cc5ad135171",
+            .hash = "zopengl-0.6.0-dev-5-tnz59jCAB6WpFFql6YdVtwBLlOcReCYVOnxQTPD-xC",
+        },
+        .zgui = .{
+            .url = "git+https://github.com/sdzx-1/zgui#f598340662961d7c1e0c6c04a6f83fcf2632757c",
+            .hash = "zgui-0.6.0-dev--L6sZJCbaACaIG35qNAxsTRvU51WpZWjug87wXjVGsOz",
+        },
+        .zgpu = .{
+            .url = "git+https://github.com/zig-gamedev/zgpu#3ae4a71af16df3a7dfa95023bba1a1e6a0bfb80d",
+            .hash = "zgpu-0.12.0-dev-nqFT5BCgCADqzg95ZvomJREp6oIl3NTubfyiUNHc18Pr",
         },
     },
     .paths = .{

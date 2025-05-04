@@ -1,3 +1,37 @@
+# Run demo
+You can run the demo with the following command:
+
+# Demo atm-gui
+```
+zig build -Dexamples atm-gui
+```
+
+default pin: 1234
+
+# Building and using
+## In an existing project
+Download and add type-fsm-zig as a dependency by running the following command in your project root:
+```shell
+zig fetch --save git+https://github.com/sdzx-1/typed-fsm-zig.git
+```
+
+Then add typed-fsm-zig as a dependency and import its modules and artifact in your build.zig:
+
+```zig
+    const typed_fsm = b.dependency("typed_fsm", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+```
+
+Now add the modules and artifact to your target as you would normally:
+
+```zig
+    exe.root_module.addImport("type_fsm", typed_fsm.module("root"));
+```
+
+
 # 1. Briefly introduce the advantages of typed finite state machines
 ## 1.1 Introduction to finite state machines
 Finite state machines (FSM, hereinafter referred to as state machines) are a very common design pattern in programs.
