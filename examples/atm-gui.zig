@@ -195,15 +195,13 @@ const AtmSt = enum {
             EjectCard: AtmSt.EWitness(.ready),
 
             pub fn genMsg(
-                ist: *InternalState,
+                try_times: u8,
+                pin: [4]u8,
                 tmpPin: [4]u8,
             ) @This() {
-                defer ist.try_times += 1;
-                if (std.mem.eql(u8, &ist.pin, &tmpPin)) {
-                    ist.try_times = 0;
+                if (std.mem.eql(u8, &pin, &tmpPin)) {
                     return .Correct;
-                } else if (ist.try_times == 2) {
-                    ist.try_times = 0;
+                } else if (try_times == 2) {
                     return .EjectCard;
                 } else {
                     return .Incorrect;
@@ -311,10 +309,19 @@ pub fn readyHandler(comptime w: AtmSt.EWitness(.ready), ist: *InternalState) voi
 pub fn cardInsertedHandler(comptime w: AtmSt.EWitness(.cardInserted), ist: *InternalState) void {
     switch (w.genMsg()(ist.window, ist.try_times)) {
         .CheckPin => |val| {
-            switch (val.wit.genMsg()(ist, val.v)) {
-                .Correct => |wit| @call(.always_tail, sessionHandler, .{ wit, ist }),
-                .Incorrect => |wit| @call(.always_tail, cardInsertedHandler, .{ wit, ist }),
-                .EjectCard => |wit| @call(.always_tail, readyHandler, .{ wit, ist }),
+            switch (val.wit.genMsg()(ist.try_times, ist.pin, val.v)) {
+                .Incorrect => |wit| {
+                    ist.try_times += 1;
+                    @call(.always_tail, cardInsertedHandler, .{ wit, ist });
+                },
+                .Correct => |wit| {
+                    ist.try_times = 0;
+                    @call(.always_tail, sessionHandler, .{ wit, ist });
+                },
+                .EjectCard => |wit| {
+                    ist.try_times = 0;
+                    @call(.always_tail, readyHandler, .{ wit, ist });
+                },
             }
         },
     }
