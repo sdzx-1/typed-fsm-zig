@@ -1,5 +1,5 @@
 const std = @import("std");
-const typedFsm = @import("typed-fsm");
+const typedFsm = @import("typed_fsm");
 const Witness = typedFsm.Witness;
 const zgui = @import("zgui");
 const glfw = @import("zglfw");

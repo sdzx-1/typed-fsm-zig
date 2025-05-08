@@ -19,12 +19,12 @@ pub fn build(b: *std.Build) void {
                 .target = target,
                 .optimize = optimize,
             });
+            exe_mod.addImport("typed_fsm", typed_fsm_mod);
 
             const exe = b.addExecutable(.{
                 .name = "atm-gui",
                 .root_module = exe_mod,
             });
-            exe.root_module.addImport("typed-fsm", typed_fsm_mod);
 
             {
                 { // zgui and deps
