@@ -6,7 +6,7 @@ pub fn build(b: *std.Build) void {
 
     const build_examples = b.option(bool, "examples", "build all examples") orelse false;
 
-    const type_fsm_mod = b.createModule(.{
+    const typed_fsm_mod = b.addModule("root", .{
         .root_source_file = b.path("src/typed-fsm.zig"),
         .target = target,
         .optimize = optimize,
@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
                 .name = "atm-gui",
                 .root_module = exe_mod,
             });
-            exe.root_module.addImport("typed-fsm", type_fsm_mod);
+            exe.root_module.addImport("typed-fsm", typed_fsm_mod);
 
             {
                 { // zgui and deps
