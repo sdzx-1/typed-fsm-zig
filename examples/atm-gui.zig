@@ -34,12 +34,11 @@ pub fn main() anyerror!void {
     var gpa_instance = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa = gpa_instance.allocator();
 
-    var nlist = typedFsm.NodeList.init(gpa);
-    defer nlist.deinit();
-    var elist = typedFsm.EdgeList.init(gpa);
-    defer elist.deinit();
-
-    _ = try std.Thread.spawn(.{ .allocator = gpa }, typedFsm.graph, .{ AtmSt, &nlist, &elist });
+    // var nlist = typedFsm.NodeList.init(gpa);
+    // defer nlist.deinit();
+    // var elist = typedFsm.EdgeList.init(gpa);
+    // defer elist.deinit();
+    // _ = try std.Thread.spawn(.{ .allocator = gpa }, typedFsm.graph, .{ AtmSt, &nlist, &elist });
 
     try glfw.init();
     defer glfw.terminate();

@@ -2,7 +2,7 @@
 You can run the demo with the following command:
 
 # Demo atm-gui
-```
+```shell
 zig build -Dexamples atm-gui
 ```
 
@@ -30,7 +30,6 @@ Now add the modules and artifact to your target as you would normally:
 ```zig
     exe.root_module.addImport("type_fsm", typed_fsm.module("root"));
 ```
-
 
 # 1. Briefly introduce the advantages of typed finite state machines
 ## 1.1 Introduction to finite state machines
