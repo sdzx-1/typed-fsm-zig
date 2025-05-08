@@ -25,10 +25,10 @@ Then add typed-fsm-zig as a dependency and import its modules and artifact in yo
 
 ```
 
-Now add the modules and artifact to your target as you would normally:
+Now add the modules to your module as you would normally:
 
 ```zig
-    exe.root_module.addImport("type_fsm", typed_fsm.module("root"));
+    exe_mod.addImport("typed_fsm", typed_fsm.module("root"));
 ```
 
 # 1. Briefly introduce the advantages of typed finite state machines
