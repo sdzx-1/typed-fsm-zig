@@ -108,189 +108,177 @@ const AtmSt = enum {
         return Witness(AtmSt, .exit, s);
     }
 
-    pub fn exitST() type {
-        return union(enum) {};
-    }
+    pub const exitST = union(enum) {};
 
-    pub fn readyST() type {
-        return union(enum) {
-            ExitAtm: EWitness(.exit),
-            InsertCard: EWitness(.cardInserted),
+    pub const readyST = union(enum) {
+        ExitAtm: EWitness(.exit),
+        InsertCard: EWitness(.cardInserted),
 
-            pub fn genMsg(window: *Window) @This() {
-                while (true) {
-                    init(window);
-                    defer {
-                        zgui.backend.draw();
-                        window.swapBuffers();
+        pub fn genMsg(window: *Window) @This() {
+            while (true) {
+                init(window);
+                defer {
+                    zgui.backend.draw();
+                    window.swapBuffers();
+                }
+
+                if (window.shouldClose() or
+                    window.getKey(.q) == .press or
+                    window.getKey(.escape) == .press) return .ExitAtm;
+
+                {
+                    _ = zgui.begin("ready", .{ .flags = .{
+                        .no_collapse = true,
+                        .no_saved_settings = true,
+                        .no_move = true,
+                        .no_resize = true,
+                    } });
+                    defer zgui.end();
+                    if (zgui.button("Isnert card", .{})) {
+                        return .InsertCard;
                     }
-
-                    if (window.shouldClose() or
-                        window.getKey(.q) == .press or
-                        window.getKey(.escape) == .press) return .ExitAtm;
-
-                    {
-                        _ = zgui.begin("ready", .{ .flags = .{
-                            .no_collapse = true,
-                            .no_saved_settings = true,
-                            .no_move = true,
-                            .no_resize = true,
-                        } });
-                        defer zgui.end();
-                        if (zgui.button("Isnert card", .{})) {
-                            return .InsertCard;
-                        }
-                        if (zgui.button("Exit!", .{})) {
-                            return .ExitAtm;
-                        }
+                    if (zgui.button("Exit!", .{})) {
+                        return .ExitAtm;
                     }
                 }
             }
-        };
-    }
+        }
+    };
 
-    pub fn cardInsertedST() type {
-        return union(enum) {
-            CheckPin: struct { wit: EWitness(.check) = .{}, v: [4]u8 },
+    pub const cardInsertedST = union(enum) {
+        CheckPin: struct { wit: EWitness(.check) = .{}, v: [4]u8 },
 
-            pub fn genMsg(window: *Window, try_times: u8) @This() {
-                var tmpPin: [4:0]u8 = .{ 0, 0, 0, 0 };
-                while (true) {
-                    init(window);
-                    defer {
-                        zgui.backend.draw();
-                        window.swapBuffers();
+        pub fn genMsg(window: *Window, try_times: u8) @This() {
+            var tmpPin: [4:0]u8 = .{ 0, 0, 0, 0 };
+            while (true) {
+                init(window);
+                defer {
+                    zgui.backend.draw();
+                    window.swapBuffers();
+                }
+
+                {
+                    _ = zgui.begin("Insert Card", .{ .flags = .{
+                        .no_collapse = true,
+                        .no_saved_settings = true,
+                        .no_move = true,
+                        .no_resize = true,
+                    } });
+                    defer zgui.end();
+
+                    _ = zgui.inputText("password", .{
+                        .buf = &tmpPin,
+                        .flags = .{ .password = true, .chars_decimal = true },
+                    });
+
+                    if (zgui.button("Sub", .{})) {
+                        for (0..4) |i| tmpPin[i] -|= 48;
+                        return .{ .CheckPin = .{ .v = tmpPin } };
                     }
 
-                    {
-                        _ = zgui.begin("Insert Card", .{ .flags = .{
-                            .no_collapse = true,
-                            .no_saved_settings = true,
-                            .no_move = true,
-                            .no_resize = true,
-                        } });
-                        defer zgui.end();
+                    zgui.text("try times: {d}", .{try_times});
+                }
+            }
+        }
+    };
 
-                        _ = zgui.inputText("password", .{
-                            .buf = &tmpPin,
-                            .flags = .{ .password = true, .chars_decimal = true },
-                        });
+    pub const checkST = union(enum) {
+        Correct: AtmSt.EWitness(.session),
+        Incorrect: AtmSt.EWitness(.cardInserted),
+        EjectCard: AtmSt.EWitness(.ready),
 
-                        if (zgui.button("Sub", .{})) {
-                            for (0..4) |i| tmpPin[i] -|= 48;
-                            return .{ .CheckPin = .{ .v = tmpPin } };
-                        }
+        pub fn genMsg(
+            try_times: u8,
+            pin: [4]u8,
+            tmpPin: [4]u8,
+        ) @This() {
+            if (std.mem.eql(u8, &pin, &tmpPin)) {
+                return .Correct;
+            } else if (try_times == 2) {
+                return .EjectCard;
+            } else {
+                return .Incorrect;
+            }
+        }
+    };
 
-                        zgui.text("try times: {d}", .{try_times});
+    pub const sessionST = union(enum) {
+        Disponse: struct { v: usize, wit: EWitness(.session) = .{} },
+        EjectCard: EWitness(.ready),
+        ChangePin: EWitness(.changePin),
+
+        pub fn genMsg(window: *Window, amount: usize) @This() {
+            var dispVal: i32 = @divTrunc(@as(i32, @intCast(amount)), 2);
+            while (true) {
+                init(window);
+                defer {
+                    zgui.backend.draw();
+                    window.swapBuffers();
+                }
+
+                {
+                    _ = zgui.begin("Session", .{ .flags = .{
+                        .no_collapse = true,
+                        .no_saved_settings = true,
+                        .no_move = true,
+                        .no_resize = true,
+                    } });
+                    defer zgui.end();
+
+                    zgui.text("amount: {d}", .{amount});
+                    _ = zgui.sliderInt(
+                        "disponse value",
+                        .{ .v = &dispVal, .min = 0, .max = @intCast(amount) },
+                    );
+
+                    if (zgui.button("Disponse", .{})) {
+                        return .{ .Disponse = .{ .v = @intCast(dispVal) } };
+                    }
+
+                    if (zgui.button("ChangePin", .{})) {
+                        return .ChangePin;
+                    }
+                    if (zgui.button("Eject card", .{})) {
+                        return .EjectCard;
                     }
                 }
             }
-        };
-    }
+        }
+    };
 
-    pub fn checkST() type {
-        return union(enum) {
-            Correct: AtmSt.EWitness(.session),
-            Incorrect: AtmSt.EWitness(.cardInserted),
-            EjectCard: AtmSt.EWitness(.ready),
+    pub const changePinST = union(enum) {
+        Update: struct { v: [4]u8, wit: EWitness(.ready) = .{} },
 
-            pub fn genMsg(
-                try_times: u8,
-                pin: [4]u8,
-                tmpPin: [4]u8,
-            ) @This() {
-                if (std.mem.eql(u8, &pin, &tmpPin)) {
-                    return .Correct;
-                } else if (try_times == 2) {
-                    return .EjectCard;
-                } else {
-                    return .Incorrect;
+        pub fn genMsg(window: *Window) @This() {
+            var tmpPin: [4:0]u8 = .{ 0, 0, 0, 0 };
+            while (true) {
+                init(window);
+                defer {
+                    zgui.backend.draw();
+                    window.swapBuffers();
                 }
-            }
-        };
-    }
 
-    pub fn sessionST() type {
-        return union(enum) {
-            Disponse: struct { v: usize, wit: EWitness(.session) = .{} },
-            EjectCard: EWitness(.ready),
-            ChangePin: EWitness(.changePin),
+                {
+                    _ = zgui.begin("ChangePin", .{ .flags = .{
+                        .no_collapse = true,
+                        .no_saved_settings = true,
+                        .no_move = true,
+                        .no_resize = true,
+                    } });
+                    defer zgui.end();
+                    _ = zgui.inputText("password", .{
+                        .buf = &tmpPin,
+                        .flags = .{ .password = true, .chars_decimal = true },
+                    });
 
-            pub fn genMsg(window: *Window, amount: usize) @This() {
-                var dispVal: i32 = @divTrunc(@as(i32, @intCast(amount)), 2);
-                while (true) {
-                    init(window);
-                    defer {
-                        zgui.backend.draw();
-                        window.swapBuffers();
-                    }
-
-                    {
-                        _ = zgui.begin("Session", .{ .flags = .{
-                            .no_collapse = true,
-                            .no_saved_settings = true,
-                            .no_move = true,
-                            .no_resize = true,
-                        } });
-                        defer zgui.end();
-
-                        zgui.text("amount: {d}", .{amount});
-                        _ = zgui.sliderInt(
-                            "disponse value",
-                            .{ .v = &dispVal, .min = 0, .max = @intCast(amount) },
-                        );
-
-                        if (zgui.button("Disponse", .{})) {
-                            return .{ .Disponse = .{ .v = @intCast(dispVal) } };
-                        }
-
-                        if (zgui.button("ChangePin", .{})) {
-                            return .ChangePin;
-                        }
-                        if (zgui.button("Eject card", .{})) {
-                            return .EjectCard;
-                        }
+                    if (zgui.button("Sub", .{})) {
+                        for (0..4) |i| tmpPin[i] -|= 48;
+                        return .{ .Update = .{ .v = tmpPin } };
                     }
                 }
             }
-        };
-    }
-
-    pub fn changePinST() type {
-        return union(enum) {
-            Update: struct { v: [4]u8, wit: EWitness(.ready) = .{} },
-
-            pub fn genMsg(window: *Window) @This() {
-                var tmpPin: [4:0]u8 = .{ 0, 0, 0, 0 };
-                while (true) {
-                    init(window);
-                    defer {
-                        zgui.backend.draw();
-                        window.swapBuffers();
-                    }
-
-                    {
-                        _ = zgui.begin("ChangePin", .{ .flags = .{
-                            .no_collapse = true,
-                            .no_saved_settings = true,
-                            .no_move = true,
-                            .no_resize = true,
-                        } });
-                        defer zgui.end();
-                        _ = zgui.inputText("password", .{
-                            .buf = &tmpPin,
-                            .flags = .{ .password = true, .chars_decimal = true },
-                        });
-
-                        if (zgui.button("Sub", .{})) {
-                            for (0..4) |i| tmpPin[i] -|= 48;
-                            return .{ .Update = .{ .v = tmpPin } };
-                        }
-                    }
-                }
-            }
-        };
-    }
+        }
+    };
 };
 
 // ready

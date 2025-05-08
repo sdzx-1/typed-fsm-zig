@@ -6,7 +6,7 @@ pub fn Witness(T: type, end: T, start: T) type {
             const i: usize = @intFromEnum(start);
             const ename = tenum.fields[i].name;
 
-            const stru = @field(T, ename ++ "ST")();
+            const stru = @field(T, ename ++ "ST");
             if (!@hasDecl(stru, "genMsg") and end == start) {
                 return struct {
                     pub const witness_spec_type = T;
