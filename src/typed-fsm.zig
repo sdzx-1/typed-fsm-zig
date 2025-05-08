@@ -55,7 +55,7 @@ pub fn graph(T: type, nlist: *NodeList, elist: *EdgeList) !void {
             inline for (e.fields) |f| {
                 const fname = f.name;
                 try nlist.append(.{ .name = f.name, .id = f.value });
-                const stru = @field(T, fname ++ "ST")();
+                const stru = @field(T, fname ++ "ST");
                 switch (@typeInfo(stru)) {
                     .@"union" => |u| {
                         inline for (0..u.fields.len) |i| {
