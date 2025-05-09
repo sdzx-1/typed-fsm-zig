@@ -143,7 +143,7 @@ pub const AtmSt = enum {
         },
 
         var phone_number: [11:0]u8 = @splat(0);
-        pub fn genMsg(window: *Window) @This() {
+        pub fn genMsg(window: *Window, times: u8) @This() {
             while (true) {
                 init(window);
                 defer {
@@ -160,6 +160,7 @@ pub const AtmSt = enum {
                     } });
                     defer zgui.end();
 
+                    zgui.text("Remaining times {d}", .{3 - times});
                     _ = zgui.inputText("phone number", .{
                         .buf = &phone_number,
                         .flags = .{ .chars_decimal = true },
@@ -438,7 +439,7 @@ pub fn cardInsertedHandler(comptime w: AtmSt.EWitness(.cardInserted), ist: *Inte
 }
 
 pub fn reqPNHandler(comptime w: AtmSt.EWitness(.reqPN), ist: *InternalState) void {
-    switch (w.genMsg()(ist.window)) {
+    switch (w.genMsg()(ist.window, ist.verify_times)) {
         .PhoneNumber => |v| {
             var prng = std.Random.DefaultPrng.init(blk: {
                 var seed: u64 = undefined;
