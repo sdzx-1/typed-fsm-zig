@@ -6,24 +6,10 @@ const glfw = @import("zglfw");
 const zopengl = @import("zopengl");
 
 const content_dir = @import("build_options").content_dir;
-const window_titlw = "atm";
+const window_titlw = "ATM-EXAMPLE";
 const gl = zopengl.bindings;
 
 const Window = glfw.Window;
-
-const InternalState = struct {
-    pin: [4]u8,
-    amount: usize,
-    window: *Window,
-    try_times: u8 = 0,
-    verify_next: ?Next = null,
-    verify_times: u8 = 0,
-
-    pub const Next = enum {
-        toSession,
-        toChangePin,
-    };
-};
 
 fn init(window: *Window) void {
     glfw.pollEvents();
@@ -60,7 +46,7 @@ pub fn main() anyerror!void {
     glfw.windowHint(.client_api, .opengl_api);
     glfw.windowHint(.doublebuffer, true);
 
-    const window = try glfw.Window.create(400, 400, window_titlw, null);
+    const window = try glfw.Window.create(800, 400, window_titlw, null);
     defer window.destroy();
 
     glfw.makeContextCurrent(window);
@@ -78,7 +64,7 @@ pub fn main() anyerror!void {
 
     _ = zgui.io.addFontFromFileWithConfig(
         content_dir ++ "FiraMono.ttf",
-        std.math.floor(16.0 * scale_factor),
+        std.math.floor(22.0 * scale_factor),
         null,
         null,
     );
@@ -88,146 +74,62 @@ pub fn main() anyerror!void {
     zgui.backend.init(window);
     defer zgui.backend.deinit();
 
-    var ist: InternalState = .{
-        .pin = .{ 1, 2, 3, 4 },
-        .amount = 10000,
-        .window = window,
-    };
-    // reqVerifyHandler(AtmSt.EWitness(.reqVerify){}, &ist);
-    const start = AtmSt.EWitness(.ready){};
-    readyHandler(start, &ist);
+    var ist = Atm.State.init(window);
+
+    const wa = Atm.EWit(.ready){};
+    wa.handler_normal(&ist);
 }
 
-pub const AtmSt = enum {
+pub const Atm = enum {
     exit,
     ready,
-    cardInserted,
-    check,
+    checkPin, // checkPin(session, checkPin(session, checkPin(session, ready)))
     session,
-    changePin,
 
-    //request phone number
-    reqPN,
-    reqCode,
-    verify,
+    pub const State = struct {
+        pin: [4]u8 = .{ 1, 2, 3, 4 },
+        amount: usize = 10_0000,
+        window: *Window,
 
-    pub const verifyST = union(enum) {
-        SuccessToChangePin: EWitness(.changePin),
-        SuccessToSession: EWitness(.session),
-        Failed: EWitness(.reqPN),
-        Exit: EWitness(.exit),
-
-        pub fn genMsg(
-            lhs: [4]u8,
-            rhs: [4]u8,
-            next: InternalState.Next,
-            verify_times: u8,
-        ) @This() {
-            if (std.mem.eql(u8, &lhs, &rhs)) {
-                switch (next) {
-                    .toSession => return .SuccessToSession,
-                    .toChangePin => return .SuccessToChangePin,
-                }
-            } else if (verify_times >= 2) {
-                return .Exit;
-            } else {
-                return .Failed;
-            }
+        pub fn init(win: *Window) @This() {
+            return .{ .window = win };
         }
     };
 
-    pub const reqPNST = union(enum) {
-        PhoneNumber: struct {
-            wit: EWitness(.reqCode) = .{},
-            v: [11]u8,
-        },
-
-        var phone_number: [11:0]u8 = @splat(0);
-        pub fn genMsg(window: *Window, times: u8) @This() {
-            while (true) {
-                init(window);
-                defer {
-                    zgui.backend.draw();
-                    window.swapBuffers();
-                }
-
-                {
-                    _ = zgui.begin("ReqVerify", .{ .flags = .{
-                        .no_collapse = true,
-                        .no_saved_settings = true,
-                        .no_move = true,
-                        .no_resize = true,
-                    } });
-                    defer zgui.end();
-
-                    zgui.text("Remaining times {d}", .{3 - times});
-                    _ = zgui.inputText("phone number", .{
-                        .buf = &phone_number,
-                        .flags = .{ .chars_decimal = true },
-                    });
-                    if (zgui.button("send phone number", .{})) {
-                        var tmp: [11]u8 = undefined;
-                        for (&phone_number, 0..) |p, i| {
-                            tmp[i] = p -| 48;
-                        }
-                        return .{ .PhoneNumber = .{ .v = tmp } };
-                    }
-                }
-            }
-        }
-    };
-
-    pub const reqCodeST = union(enum) {
-        RecvCode: struct {
-            wit: EWitness(.verify) = .{},
-            v: [4]u8,
-        },
-
-        var recv_code: [4:0]u8 = @splat(0);
-        pub fn genMsg(window: *Window) @This() {
-            while (true) {
-                init(window);
-                defer {
-                    zgui.backend.draw();
-                    window.swapBuffers();
-                }
-
-                {
-                    _ = zgui.begin("ReqVerify", .{ .flags = .{
-                        .no_collapse = true,
-                        .no_saved_settings = true,
-                        .no_move = true,
-                        .no_resize = true,
-                    } });
-                    defer zgui.end();
-
-                    _ = zgui.inputText("recv doe", .{
-                        .buf = &recv_code,
-                        .flags = .{ .chars_decimal = true },
-                    });
-                    if (zgui.button("send recv code", .{})) {
-                        var tmp: [4]u8 = undefined;
-                        for (&recv_code, 0..) |p, i| {
-                            tmp[i] = p -| 48;
-                        }
-                        return .{ .RecvCode = .{ .v = tmp } };
-                    }
-                }
-            }
-        }
-    };
-
-    pub fn EWitness(s: AtmSt) type {
-        return Witness(AtmSt, .exit, s);
+    fn prinet_enter_state(
+        val: typedFsm.sdzx(Atm),
+        gst: *const Atm.State,
+    ) void {
+        std.debug.print("current_st :  {}\n", .{val});
+        std.debug.print("current_gst: {any}\n", .{gst.*});
     }
 
-    pub const exitST = union(enum) {};
+    pub fn EWit(t: @This()) type {
+        return typedFsm.Witness(@This(), typedFsm.val_to_sdzx(@This(), t), State, prinet_enter_state);
+    }
+    pub fn EWitFn(val: anytype) type {
+        return typedFsm.Witness(@This(), typedFsm.val_to_sdzx(@This(), val), State, prinet_enter_state);
+    }
+
+    pub const exitST = union(enum) {
+        pub fn handler(ist: *State) void {
+            std.debug.print("exit\n", .{});
+            std.debug.print("st: {any}\n", .{ist.*});
+        }
+    };
 
     pub const readyST = union(enum) {
-        ExitAtm: EWitness(.exit),
-        InsertCard: EWitness(.cardInserted),
+        InsertCard: EWitFn(.{ Atm.checkPin, Atm.session, .{ Atm.checkPin, Atm.session, .{ Atm.checkPin, Atm.session, Atm.ready } } }),
+        Exit: EWit(.exit),
 
-        pub fn genMsg(window: *Window) @This() {
+        pub fn handler(ist: *State) void {
+            switch (genMsg(ist.window)) {
+                .Exit => |wit| wit.handler(ist),
+                .InsertCard => |wit| wit.handler(ist),
+            }
+        }
+
+        fn genMsg(window: *Window) @This() {
             while (true) {
                 init(window);
                 defer {
@@ -237,12 +139,13 @@ pub const AtmSt = enum {
 
                 if (window.shouldClose() or
                     window.getKey(.q) == .press or
-                    window.getKey(.escape) == .press) return .ExitAtm;
+                    window.getKey(.escape) == .press)
+                    return .{ .Exit = .{} };
 
                 {
                     _ = zgui.begin("ready", .{ .flags = .{
                         .no_collapse = true,
-                        .no_saved_settings = true,
+
                         .no_move = true,
                         .no_resize = true,
                     } });
@@ -251,81 +154,85 @@ pub const AtmSt = enum {
                         return .InsertCard;
                     }
                     if (zgui.button("Exit!", .{})) {
-                        return .ExitAtm;
+                        return .{ .Exit = .{} };
                     }
                 }
             }
         }
     };
 
-    pub const cardInsertedST = union(enum) {
-        CheckPin: struct { wit: EWitness(.check) = .{}, v: [4]u8 },
-        VerifyPN: EWitness(.reqPN),
+    pub fn checkPinST(success: typedFsm.sdzx(Atm), failed: typedFsm.sdzx(Atm)) type {
+        return union(enum) {
+            Successed: typedFsm.Witness(Atm, success, State, prinet_enter_state),
+            Failed: typedFsm.Witness(Atm, failed, State, prinet_enter_state),
 
-        pub fn genMsg(window: *Window, try_times: u8) @This() {
-            var tmpPin: [4:0]u8 = .{ 0, 0, 0, 0 };
-            while (true) {
-                init(window);
-                defer {
-                    zgui.backend.draw();
-                    window.swapBuffers();
+            pub const callMode: typedFsm.CallMode(@This()) = .Direct;
+
+            pub fn handler(ist: *State) void {
+                switch (genMsg(ist.window, &ist.pin)) {
+                    .Successed => |wit| wit.handler(ist),
+                    .Failed => |wit| wit.handler(ist),
                 }
+            }
 
-                {
-                    _ = zgui.begin("Insert Card", .{ .flags = .{
-                        .no_collapse = true,
-                        .no_saved_settings = true,
-                        .no_move = true,
-                        .no_resize = true,
-                    } });
-                    defer zgui.end();
-
-                    _ = zgui.inputText("password", .{
-                        .buf = &tmpPin,
-                        .flags = .{ .password = true, .chars_decimal = true },
-                    });
-
-                    if (zgui.button("Sub", .{})) {
-                        for (0..4) |i| tmpPin[i] -|= 48;
-                        return .{ .CheckPin = .{ .v = tmpPin } };
+            fn genMsg(window: *Window, pin: []const u8) @This() {
+                var tmpPin: [4:0]u8 = .{ 0, 0, 0, 0 };
+                while (true) {
+                    init(window);
+                    defer {
+                        zgui.backend.draw();
+                        window.swapBuffers();
                     }
 
-                    zgui.text("try times: {d}", .{try_times});
+                    {
+                        _ = zgui.begin("CheckPin", .{ .flags = .{
+                            .no_collapse = true,
 
-                    if (zgui.button("Login by Code", .{})) {
-                        return .VerifyPN;
+                            .no_move = true,
+                            .no_resize = true,
+                        } });
+                        defer zgui.end();
+
+                        _ = zgui.inputText("pin", .{
+                            .buf = &tmpPin,
+                            .flags = .{ .password = true, .chars_decimal = true },
+                        });
+
+                        if (zgui.button("OK", .{})) {
+                            for (0..4) |i| tmpPin[i] -|= 48;
+
+                            if (std.mem.eql(u8, &tmpPin, pin)) {
+                                return .Successed;
+                            } else {
+                                return .Failed;
+                            }
+                        }
                     }
                 }
             }
-        }
-    };
-
-    pub const checkST = union(enum) {
-        Correct: AtmSt.EWitness(.session),
-        Incorrect: AtmSt.EWitness(.cardInserted),
-        VerifyPN: AtmSt.EWitness(.reqPN),
-
-        pub fn genMsg(
-            try_times: u8,
-            pin: [4]u8,
-            tmpPin: [4]u8,
-        ) @This() {
-            if (std.mem.eql(u8, &pin, &tmpPin)) {
-                return .Correct;
-            } else if (try_times == 2) {
-                return .VerifyPN;
-            } else {
-                return .Incorrect;
-            }
-        }
-    };
+        };
+    }
 
     pub const sessionST = union(enum) {
-        Disponse: struct { v: usize, wit: EWitness(.session) = .{} },
-        EjectCard: EWitness(.ready),
-        ChangePin: EWitness(.reqPN),
+        Disponse: struct { wit: EWit(.session) = .{}, v: usize },
+        EjectCard: EWit(.ready),
 
-        pub fn genMsg(window: *Window, amount: usize) @This() {
+        pub fn handler(ist: *State) void {
+            switch (genMsg(ist.window, ist.amount)) {
+                .Disponse => |val| {
+                    if (ist.amount >= val.v) {
+                        ist.amount -= val.v;
+                        val.wit.handler(ist);
+                    } else {
+                        std.debug.print("insufficient balance\n", .{});
+                        val.wit.handler(ist);
+                    }
+                },
+                .EjectCard => |wit| wit.handler(ist),
+            }
+        }
+
+        fn genMsg(window: *Window, amount: usize) @This() {
             var dispVal: i32 = @divTrunc(@as(i32, @intCast(amount)), 2);
             while (true) {
                 init(window);
@@ -337,7 +244,7 @@ pub const AtmSt = enum {
                 {
                     _ = zgui.begin("Session", .{ .flags = .{
                         .no_collapse = true,
-                        .no_saved_settings = true,
+
                         .no_move = true,
                         .no_resize = true,
                     } });
@@ -353,9 +260,6 @@ pub const AtmSt = enum {
                         return .{ .Disponse = .{ .v = @intCast(dispVal) } };
                     }
 
-                    if (zgui.button("ChangePin", .{})) {
-                        return .ChangePin;
-                    }
                     if (zgui.button("Eject card", .{})) {
                         return .EjectCard;
                     }
@@ -363,149 +267,4 @@ pub const AtmSt = enum {
             }
         }
     };
-
-    pub const changePinST = union(enum) {
-        Update: struct { v: [4]u8, wit: EWitness(.ready) = .{} },
-
-        pub fn genMsg(window: *Window) @This() {
-            var tmpPin: [4:0]u8 = .{ 0, 0, 0, 0 };
-            while (true) {
-                init(window);
-                defer {
-                    zgui.backend.draw();
-                    window.swapBuffers();
-                }
-
-                {
-                    _ = zgui.begin("ChangePin", .{ .flags = .{
-                        .no_collapse = true,
-                        .no_saved_settings = true,
-                        .no_move = true,
-                        .no_resize = true,
-                    } });
-                    defer zgui.end();
-                    _ = zgui.inputText("password", .{
-                        .buf = &tmpPin,
-                        .flags = .{ .password = true, .chars_decimal = true },
-                    });
-
-                    if (zgui.button("Sub", .{})) {
-                        for (0..4) |i| tmpPin[i] -|= 48;
-                        return .{ .Update = .{ .v = tmpPin } };
-                    }
-                }
-            }
-        }
-    };
 };
-
-// ready
-pub fn readyHandler(comptime w: AtmSt.EWitness(.ready), ist: *InternalState) void {
-    switch (w.genMsg()(ist.window)) {
-        .ExitAtm => |witness| {
-            witness.terminal();
-        },
-        .InsertCard => |witness| {
-            @call(.always_tail, cardInsertedHandler, .{ witness, ist });
-        },
-    }
-}
-
-// cardInserted,
-pub fn cardInsertedHandler(comptime w: AtmSt.EWitness(.cardInserted), ist: *InternalState) void {
-    switch (w.genMsg()(ist.window, ist.try_times)) {
-        .VerifyPN => |wit| {
-            ist.verify_next = .toSession;
-            @call(.always_tail, reqPNHandler, .{ wit, ist });
-        },
-        .CheckPin => |val| {
-            switch (val.wit.genMsg()(ist.try_times, ist.pin, val.v)) {
-                .Incorrect => |wit| {
-                    ist.try_times += 1;
-                    @call(.always_tail, cardInsertedHandler, .{ wit, ist });
-                },
-                .Correct => |wit| {
-                    ist.try_times = 0;
-                    @call(.always_tail, sessionHandler, .{ wit, ist });
-                },
-                .VerifyPN => |wit| {
-                    ist.try_times = 0;
-                    ist.verify_next = .toChangePin;
-                    @call(.always_tail, reqPNHandler, .{ wit, ist });
-                },
-            }
-        },
-    }
-}
-
-pub fn reqPNHandler(comptime w: AtmSt.EWitness(.reqPN), ist: *InternalState) void {
-    switch (w.genMsg()(ist.window, ist.verify_times)) {
-        .PhoneNumber => |v| {
-            var prng = std.Random.DefaultPrng.init(blk: {
-                var seed: u64 = undefined;
-                std.posix.getrandom(std.mem.asBytes(&seed)) catch unreachable;
-                break :blk seed;
-            });
-            const rand = prng.random();
-
-            var random_code: [4]u8 = @splat(0);
-            for (&random_code) |*ptr| {
-                ptr.* = rand.intRangeAtMost(u8, 0, 9);
-            }
-            std.debug.print("send code: {d} to phone {d}\n", .{ random_code, v.v });
-
-            switch (v.wit.genMsg()(ist.window)) {
-                .RecvCode => |v1| {
-                    switch (v1.wit.genMsg()(random_code, v1.v, ist.verify_next.?, ist.verify_times)) {
-                        .Exit => |wit| {
-                            std.debug.print("test 3 times, exit!", .{});
-                            wit.terminal();
-                        },
-                        .SuccessToChangePin => |wit| {
-                            ist.verify_times = 0;
-                            @call(.always_tail, changePinHandler, .{ wit, ist });
-                        },
-                        .SuccessToSession => |wit| {
-                            ist.verify_times = 0;
-                            @call(.always_tail, sessionHandler, .{ wit, ist });
-                        },
-                        .Failed => |wit| {
-                            ist.verify_times += 1;
-                            std.debug.print("VERIFY FAILED, Retry\n", .{});
-                            @call(.always_tail, reqPNHandler, .{ wit, ist });
-                        },
-                    }
-                },
-            }
-        },
-    }
-}
-
-// session,
-pub fn sessionHandler(comptime w: AtmSt.EWitness(.session), ist: *InternalState) void {
-    switch (w.genMsg()(ist.window, ist.amount)) {
-        .Disponse => |val| {
-            if (ist.amount >= val.v) {
-                ist.amount -= val.v;
-                @call(.always_tail, sessionHandler, .{ val.wit, ist });
-            } else {
-                std.debug.print("insufficient balance\n", .{});
-                @call(.always_tail, sessionHandler, .{ val.wit, ist });
-            }
-        },
-        .EjectCard => |wit| @call(.always_tail, readyHandler, .{ wit, ist }),
-        .ChangePin => |wit| {
-            ist.verify_next = .toChangePin;
-            @call(.always_tail, reqPNHandler, .{ wit, ist });
-        },
-    }
-}
-
-pub fn changePinHandler(comptime w: AtmSt.EWitness(.changePin), ist: *InternalState) void {
-    switch (w.genMsg()(ist.window)) {
-        .Update => |val| {
-            ist.pin = val.v;
-            @call(.always_tail, readyHandler, .{ val.wit, ist });
-        },
-    }
-}

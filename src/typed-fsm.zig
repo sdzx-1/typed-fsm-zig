@@ -1,115 +1,282 @@
 const std = @import("std");
+const Adler32 = std.hash.Adler32;
 
-pub fn Witness(T: type, end: T, start: T) type {
-    switch (@typeInfo(T)) {
-        .@"enum" => |tenum| {
-            const i: usize = @intFromEnum(start);
-            const ename = tenum.fields[i].name;
+pub fn sdzx(TYPE: type) type {
+    comptime {
+        switch (@typeInfo(TYPE)) {
+            .@"enum" => {},
+            else => @compileError(std.fmt.comptimePrint("Unspoort type: {any}, Only support enum!", .{TYPE})),
+        }
+    }
 
-            const stru = @field(T, ename ++ "ST");
-            if (!@hasDecl(stru, "genMsg") and end == start) {
-                return struct {
-                    pub const witness_spec_type = T;
-                    pub const witness_spec_start = start;
-                    pub const witness_spec_end = end;
+    return union(enum) {
+        Term: TYPE,
+        Fun: struct { fun: TYPE, args: []const sdzx(TYPE) },
 
-                    pub fn terminal(_: @This()) void {
-                        return {};
+        pub fn V(term: TYPE) sdzx(TYPE) {
+            return .{ .Term = term };
+        }
+
+        pub fn C(fun: TYPE, args: []const sdzx(TYPE)) sdzx(TYPE) {
+            return .{ .Fun = .{ .fun = fun, .args = args } };
+        }
+
+        pub fn format(
+            val: @This(),
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            switch (val) {
+                .Term => |va| {
+                    try writer.writeAll(@tagName(va));
+                },
+                .Fun => |v| {
+                    try writer.writeAll(@tagName(v.fun));
+                    try writer.writeAll("(");
+                    for (v.args, 0..) |arg, i| {
+                        if (i != 0) try writer.writeAll(", ");
+                        try format(arg, fmt, options, writer);
                     }
-                };
-            } else if (@hasDecl(stru, "genMsg") and end != start) {
-                return struct {
-                    pub const witness_spec_type = T;
-                    pub const witness_spec_start = start;
-                    pub const witness_spec_end = end;
+                    try writer.writeAll(")");
+                },
+            }
+        }
+    };
+}
 
-                    pub fn genMsg(_: @This()) @TypeOf(stru.genMsg) {
-                        return stru.genMsg;
-                    }
-                };
-            } else @compileError("Error: not impl genMsg!");
+pub fn val_to_sdzx(TYPE: type, comptime val: anytype) sdzx(TYPE) {
+    if (@TypeOf(val) == TYPE) return .{ .Term = val };
+    const args_type_info = @typeInfo(@TypeOf(val));
+    switch (args_type_info) {
+        .@"struct" => {},
+        .enum_literal => @compileError(std.fmt.comptimePrint("Expect type: {}, actual type: enum_literal", .{TYPE})),
+        else => @compileError("Need struct!"),
+    }
+
+    const fields = args_type_info.@"struct".fields;
+
+    var fun: TYPE = undefined;
+    var args: [fields.len - 1]sdzx(TYPE) = undefined;
+
+    for (fields, 0..) |field, i| {
+        const ptr: *const field.type = @ptrCast(@alignCast(field.default_value_ptr.?));
+
+        if (i == 0) {
+            if (field.type != TYPE)
+                @compileError(std.fmt.comptimePrint("Expect type: {}, actual type: {}", .{ TYPE, field.type }));
+            fun = ptr.*;
+        } else {
+            args[i - 1] = val_to_sdzx(TYPE, ptr.*);
+        }
+    }
+
+    // Need const to return address
+    const tmp_args: [fields.len - 1]sdzx(TYPE) = comptime args;
+
+    return .{ .Fun = .{ .fun = fun, .args = &tmp_args } };
+}
+
+fn sliceToTuple(T: type, comptime args: []const T) type {
+    var fields: [args.len]std.builtin.Type.StructField = undefined;
+    for (args, 0..) |arg, i| {
+        _ = arg;
+        fields[i] = .{
+            .name = std.fmt.comptimePrint("{d}", .{i}),
+            .type = T,
+            .default_value_ptr = &args[i],
+            .is_comptime = true,
+            .alignment = @alignOf(T),
+        };
+    }
+
+    const tuple: std.builtin.Type.Struct = .{
+        .layout = .auto,
+        .backing_integer = null,
+        .fields = &fields,
+        .decls = &.{},
+        .is_tuple = true,
+    };
+    return @Type(.{ .@"struct" = tuple });
+}
+
+pub fn Witness(
+    T: type,
+    val: sdzx(T),
+    GST: type,
+    enter_fn: ?fn (sdzx(T), *const GST) void,
+) type {
+    switch (val) {
+        .Term => |current_st| {
+            return struct {
+                pub const WitnessCurrentState: sdzx(T) = val;
+
+                const cST = @field(T, @tagName(current_st) ++ "ST");
+
+                pub inline fn handler_normal(_: @This(), gst: *GST) void {
+                    if (enter_fn) |ef| ef(val, gst);
+                    return @call(.auto, cST.handler, .{gst});
+                }
+
+                pub inline fn handler(_: @This(), gst: *GST) void {
+                    if (enter_fn) |ef| ef(val, gst);
+                    return @call(.always_tail, cST.handler, .{gst});
+                }
+            };
         },
-        else => @compileError("The type not support, it must be enum"),
+
+        .Fun => |fun_stru| {
+            return struct {
+                pub const WitnessCurrentState: sdzx(T) = val;
+
+                const cSTFun = @field(T, @tagName(fun_stru.fun) ++ "ST");
+                const args = fun_stru.args;
+                const args_tuple = sliceToTuple(sdzx(T), args){};
+                const cST = @call(.auto, cSTFun, args_tuple);
+
+                pub inline fn handler_normal(_: @This(), gst: *GST) void {
+                    if (enter_fn) |ef| ef(val, gst);
+                    return @call(.auto, cST.handler, .{gst});
+                }
+
+                pub inline fn handler(_: @This(), gst: *GST) void {
+                    if (enter_fn) |ef| ef(val, gst);
+                    return @call(.always_tail, cST.handler, .{gst});
+                }
+            };
+        },
     }
 }
 
-pub const Node = struct {
-    name: [:0]const u8,
-    id: usize,
+pub const Graph = struct {
+    node_set: std.AutoHashMapUnmanaged(u32, []const u8),
+    edge_array_list: std.ArrayListUnmanaged(Edge),
+
+    pub const Edge = struct {
+        from: u32,
+        to: u32,
+        label: []const u8,
+    };
+
+    const Self = @This();
+
+    pub const init: Self = .{ .node_set = .empty, .edge_array_list = .empty };
+
+    pub fn format(
+        val: @This(),
+        comptime _: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        try writer.writeAll("digraph G {\n");
+        var node_set_iter = val.node_set.iterator();
+        while (node_set_iter.next()) |entry| {
+            try std.fmt.formatIntValue(entry.key_ptr.*, "d", options, writer);
+            try writer.writeAll(" [label = \"");
+            try writer.writeAll(entry.value_ptr.*);
+            try writer.writeAll("\"];\n");
+        }
+        for (val.edge_array_list.items) |edge| {
+            try std.fmt.formatIntValue(edge.from, "d", options, writer);
+            try writer.writeAll(" -> ");
+            try std.fmt.formatIntValue(edge.to, "d", options, writer);
+            try writer.writeAll(" [label = \"");
+            try writer.writeAll(edge.label);
+            try writer.writeAll("\"];\n");
+        }
+
+        try writer.writeAll("}\n");
+    }
+
+    pub fn deinit(self: *Self, gpa: std.mem.Allocator) !void {
+        var node_set_iter = self.node_set.iterator();
+        while (node_set_iter.next()) |entry| {
+            gpa.free(entry.value_ptr);
+        }
+        self.node_set.deinit(gpa);
+
+        for (self.edge_array_list.items) |*edge| {
+            gpa.free(&edge.name);
+        }
+        self.edge_array_list.deinit(gpa);
+    }
+
+    pub fn insert_node(graph: *@This(), gpa: std.mem.Allocator, T: type, val: sdzx(T)) !void {
+        const node_label = try std.fmt.allocPrint(gpa, "{}", .{val});
+        const id: u32 = Adler32.hash(node_label);
+        if (graph.node_set.get(id)) |_| {
+            gpa.free(node_label);
+        } else {
+            try graph.node_set.put(gpa, id, node_label);
+        }
+    }
+
+    pub fn insert_edge(
+        graph: *@This(),
+        gpa: std.mem.Allocator,
+        T: type,
+        from: sdzx(T),
+        to: sdzx(T),
+        label: []const u8,
+    ) !void {
+        const from_str = try std.fmt.allocPrint(gpa, "{}", .{from});
+        const from_id: u32 = Adler32.hash(from_str);
+        gpa.free(from_str);
+
+        const to_str = try std.fmt.allocPrint(gpa, "{}", .{to});
+        const to_id: u32 = Adler32.hash(to_str);
+        gpa.free(to_str);
+
+        try graph.edge_array_list.append(gpa, .{ .from = from_id, .to = to_id, .label = label });
+    }
 };
-pub const Edge = struct {
-    name: [:0]const u8,
-    start: usize,
-    end: usize,
-};
 
-pub const NodeList = std.ArrayList(Node);
-pub const EdgeList = std.ArrayList(Edge);
-const Allocator = std.mem.Allocator;
+pub fn generate_graph(gpa: std.mem.Allocator, T: type, graph: *Graph) !void {
+    const SDZX = sdzx(T);
+    const T_info = @typeInfo(T);
+    switch (T_info) {
+        .@"enum" => {},
+        else => @compileError("Need enum!"),
+    }
+    const fields = T_info.@"enum".fields;
 
-const wstart = "witness_spec_start";
+    inline for (fields) |enum_field| {
+        const field_name = enum_field.name;
+        const cST = @field(T, field_name ++ "ST");
+        const tag: T = @enumFromInt(enum_field.value);
+        const FromST: SDZX = SDZX.V(tag);
+        try graph.insert_node(gpa, T, FromST);
 
-pub fn graph(T: type, nlist: *NodeList, elist: *EdgeList, path: []const u8) !void {
-    switch (@typeInfo(T)) {
-        .@"enum" => |e| {
-            inline for (e.fields) |f| {
-                const fname = f.name;
-                try nlist.append(.{ .name = f.name, .id = f.value });
-                const stru = @field(T, fname ++ "ST");
-                switch (@typeInfo(stru)) {
-                    .@"union" => |u| {
-                        inline for (0..u.fields.len) |i| {
-                            const t_level0 = u.fields[i].type;
-                            const tname = u.fields[i].name;
-                            if (@hasDecl(t_level0, wstart)) {
-                                try elist.append(.{
-                                    .name = tname,
-                                    .start = f.value,
-                                    .end = @intFromEnum(@field(t_level0, wstart)),
-                                });
-                            } else blk: {
-                                switch (@typeInfo(t_level0)) {
-                                    .@"struct" => |stru1| {
-                                        inline for (stru1.fields) |fd| {
-                                            switch (@typeInfo(fd.type)) {
-                                                .@"struct" => {
-                                                    if (@hasDecl(fd.type, wstart)) {
-                                                        try elist.append(.{
-                                                            .name = tname,
-                                                            .start = f.value,
-                                                            .end = @intFromEnum(@field(fd.type, wstart)),
-                                                        });
-                                                        break :blk;
-                                                    }
-                                                },
-                                                else => {},
-                                            }
-                                        }
-                                        unreachable;
-                                    },
-                                    else => unreachable,
-                                }
-                            }
+        switch (@typeInfo(@TypeOf(cST))) {
+            .type => {
+                switch (@typeInfo(cST)) {
+                    .@"union" => |union_fields| {
+                        inline for (union_fields.fields) |field| {
+                            const edge_label = field.name;
+                            const wit = field.type;
+                            const ToST: SDZX = wit.WitnessCurrentState;
+                            try graph.insert_node(gpa, T, ToST);
+                            try graph.insert_edge(gpa, T, FromST, ToST, edge_label);
                         }
                     },
-                    else => unreachable,
+                    .@"struct" => |stru| blk: {
+                        inline for (stru.fields) |field| {
+                            if (@hasField(field.type, "WitnessCurrentState")) {
+                                const edge_label = field.name;
+                                const wit = field.type;
+                                const ToST: SDZX = wit.WitnessCurrentState;
+                                try graph.insert_node(gpa, T, ToST);
+                                try graph.insert_edge(gpa, T, FromST, ToST, edge_label);
+                                break :blk;
+                            }
+                        }
+                        @compileError("Need Witness field!");
+                    },
+                    else => @compileError("Not support!"),
                 }
-            }
-        },
-        else => unreachable,
+            },
+            .@"fn" => {},
+            else => @compileError("Unsupport!"),
+        }
     }
-
-    const dir = std.fs.cwd();
-
-    const file = try dir.createFile(path, .{});
-    const writer = file.writer();
-    try writer.print("digraph G {s}\n", .{"{"});
-    for (nlist.items) |it| {
-        try writer.print("{d} [label = \"{s}\"];\n", .{ it.id, it.name });
-    }
-    for (elist.items) |it| {
-        try writer.print("{d} -> {d} [label = \"{s}\"];\n", .{ it.start, it.end, it.name });
-    }
-    try writer.print("{s}", .{"}"});
-    file.close();
 }
