@@ -15,6 +15,33 @@ pub fn build(b: *std.Build) void {
     if (build_examples) {
         {
             const exe_mod = b.createModule(.{
+                .root_source_file = b.path("examples/gen-graph.zig"),
+                .target = target,
+                .optimize = optimize,
+            });
+            exe_mod.addImport("typed_fsm", typed_fsm_mod);
+
+            const exe = b.addExecutable(.{
+                .name = "gen-graph",
+                .root_module = exe_mod,
+            });
+
+            b.installArtifact(exe);
+
+            const run_cmd = b.addRunArtifact(exe);
+
+            run_cmd.step.dependOn(b.getInstallStep());
+
+            if (b.args) |args| {
+                run_cmd.addArgs(args);
+            }
+
+            const run_step = b.step("gen-graph", "Run gen-graph");
+            run_step.dependOn(&run_cmd.step);
+        }
+
+        {
+            const exe_mod = b.createModule(.{
                 .root_source_file = b.path("examples/atm-gui.zig"),
                 .target = target,
                 .optimize = optimize,

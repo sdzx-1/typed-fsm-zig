@@ -16,6 +16,13 @@ const InternalState = struct {
     amount: usize,
     window: *Window,
     try_times: u8 = 0,
+    verify_next: ?Next = null,
+    verify_times: u8 = 0,
+
+    pub const Next = enum {
+        toSession,
+        toChangePin,
+    };
 };
 
 fn init(window: *Window) void {
@@ -33,12 +40,6 @@ fn init(window: *Window) void {
 pub fn main() anyerror!void {
     var gpa_instance = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa = gpa_instance.allocator();
-
-    // var nlist = typedFsm.NodeList.init(gpa);
-    // defer nlist.deinit();
-    // var elist = typedFsm.EdgeList.init(gpa);
-    // defer elist.deinit();
-    // _ = try std.Thread.spawn(.{ .allocator = gpa }, typedFsm.graph, .{ AtmSt, &nlist, &elist });
 
     try glfw.init();
     defer glfw.terminate();
@@ -97,7 +98,7 @@ pub fn main() anyerror!void {
     readyHandler(start, &ist);
 }
 
-const AtmSt = enum {
+pub const AtmSt = enum {
     exit,
     ready,
     cardInserted,
@@ -111,12 +112,24 @@ const AtmSt = enum {
     verify,
 
     pub const verifyST = union(enum) {
-        Success: EWitness(.changePin),
+        SuccessToChangePin: EWitness(.changePin),
+        SuccessToSession: EWitness(.session),
         Failed: EWitness(.reqPN),
+        Exit: EWitness(.exit),
 
-        pub fn genMsg(lhs: [4]u8, rhs: [4]u8) @This() {
+        pub fn genMsg(
+            lhs: [4]u8,
+            rhs: [4]u8,
+            next: InternalState.Next,
+            verify_times: u8,
+        ) @This() {
             if (std.mem.eql(u8, &lhs, &rhs)) {
-                return .Success;
+                switch (next) {
+                    .toSession => return .SuccessToSession,
+                    .toChangePin => return .SuccessToChangePin,
+                }
+            } else if (verify_times >= 2) {
+                return .Exit;
             } else {
                 return .Failed;
             }
@@ -246,6 +259,7 @@ const AtmSt = enum {
 
     pub const cardInsertedST = union(enum) {
         CheckPin: struct { wit: EWitness(.check) = .{}, v: [4]u8 },
+        VerifyPN: EWitness(.reqPN),
 
         pub fn genMsg(window: *Window, try_times: u8) @This() {
             var tmpPin: [4:0]u8 = .{ 0, 0, 0, 0 };
@@ -276,6 +290,10 @@ const AtmSt = enum {
                     }
 
                     zgui.text("try times: {d}", .{try_times});
+
+                    if (zgui.button("Login by Code", .{})) {
+                        return .VerifyPN;
+                    }
                 }
             }
         }
@@ -395,6 +413,10 @@ pub fn readyHandler(comptime w: AtmSt.EWitness(.ready), ist: *InternalState) voi
 // cardInserted,
 pub fn cardInsertedHandler(comptime w: AtmSt.EWitness(.cardInserted), ist: *InternalState) void {
     switch (w.genMsg()(ist.window, ist.try_times)) {
+        .VerifyPN => |wit| {
+            ist.verify_next = .toSession;
+            @call(.always_tail, reqPNHandler, .{ wit, ist });
+        },
         .CheckPin => |val| {
             switch (val.wit.genMsg()(ist.try_times, ist.pin, val.v)) {
                 .Incorrect => |wit| {
@@ -407,6 +429,7 @@ pub fn cardInsertedHandler(comptime w: AtmSt.EWitness(.cardInserted), ist: *Inte
                 },
                 .VerifyPN => |wit| {
                     ist.try_times = 0;
+                    ist.verify_next = .toChangePin;
                     @call(.always_tail, reqPNHandler, .{ wit, ist });
                 },
             }
@@ -432,9 +455,21 @@ pub fn reqPNHandler(comptime w: AtmSt.EWitness(.reqPN), ist: *InternalState) voi
 
             switch (v.wit.genMsg()(ist.window)) {
                 .RecvCode => |v1| {
-                    switch (v1.wit.genMsg()(random_code, v1.v)) {
-                        .Success => |wit| @call(.always_tail, changePinHandler, .{ wit, ist }),
+                    switch (v1.wit.genMsg()(random_code, v1.v, ist.verify_next.?, ist.verify_times)) {
+                        .Exit => |wit| {
+                            std.debug.print("test 3 times, exit!", .{});
+                            wit.terminal();
+                        },
+                        .SuccessToChangePin => |wit| {
+                            ist.verify_times = 0;
+                            @call(.always_tail, changePinHandler, .{ wit, ist });
+                        },
+                        .SuccessToSession => |wit| {
+                            ist.verify_times = 0;
+                            @call(.always_tail, sessionHandler, .{ wit, ist });
+                        },
                         .Failed => |wit| {
+                            ist.verify_times += 1;
                             std.debug.print("VERIFY FAILED, Retry\n", .{});
                             @call(.always_tail, reqPNHandler, .{ wit, ist });
                         },
@@ -458,7 +493,10 @@ pub fn sessionHandler(comptime w: AtmSt.EWitness(.session), ist: *InternalState)
             }
         },
         .EjectCard => |wit| @call(.always_tail, readyHandler, .{ wit, ist }),
-        .ChangePin => |wit| @call(.always_tail, reqPNHandler, .{ wit, ist }),
+        .ChangePin => |wit| {
+            ist.verify_next = .toChangePin;
+            @call(.always_tail, reqPNHandler, .{ wit, ist });
+        },
     }
 }
 

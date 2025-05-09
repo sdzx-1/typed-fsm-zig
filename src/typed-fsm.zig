@@ -49,7 +49,7 @@ const Allocator = std.mem.Allocator;
 
 const wstart = "witness_spec_start";
 
-pub fn graph(T: type, nlist: *NodeList, elist: *EdgeList) !void {
+pub fn graph(T: type, nlist: *NodeList, elist: *EdgeList, path: []const u8) !void {
     switch (@typeInfo(T)) {
         .@"enum" => |e| {
             inline for (e.fields) |f| {
@@ -101,7 +101,7 @@ pub fn graph(T: type, nlist: *NodeList, elist: *EdgeList) !void {
 
     const dir = std.fs.cwd();
 
-    const file = try dir.createFile("graph_tmp.dot", .{});
+    const file = try dir.createFile(path, .{});
     const writer = file.writer();
     try writer.print("digraph G {s}\n", .{"{"});
     for (nlist.items) |it| {
@@ -112,19 +112,4 @@ pub fn graph(T: type, nlist: *NodeList, elist: *EdgeList) !void {
     }
     try writer.print("{s}", .{"}"});
     file.close();
-
-    // dot -Tpng tmp.dot -o tmp.png
-    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    // const allocator = gpa.allocator();
-    // const cmd = [_][]const u8{ "dot", "-Tpng", "graph_tmp.dot", "-o", "graph_tmp.png" };
-    // var cp = std.process.Child.init(&cmd, allocator);
-    // try cp.spawn();
-
-    // const cmd1 = [_][]const u8{ "eog", "graph_tmp.png" };
-    // var cp1 = std.process.Child.init(&cmd1, allocator);
-    // try cp1.spawn();
-    // _ = try cp1.wait();
-
-    // try dir.deleteFile("graph_tmp.dot");
-    // try dir.deleteFile("graph_tmp.png");
 }
