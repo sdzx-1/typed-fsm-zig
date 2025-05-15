@@ -166,8 +166,6 @@ pub const Atm = enum {
             Successed: typedFsm.Witness(Atm, success, State, prinet_enter_state),
             Failed: typedFsm.Witness(Atm, failed, State, prinet_enter_state),
 
-            pub const callMode: typedFsm.CallMode(@This()) = .Direct;
-
             pub fn handler(ist: *State) void {
                 switch (genMsg(ist.window, &ist.pin)) {
                     .Successed => |wit| wit.handler(ist),
