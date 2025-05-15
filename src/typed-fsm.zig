@@ -109,9 +109,10 @@ pub fn Witness(
     switch (val) {
         .Term => |current_st| {
             return struct {
-                pub const WitnessCurrentState: sdzx(T) = val;
-
                 const cST = @field(T, @tagName(current_st) ++ "ST");
+
+                pub const WitnessCurrentState: sdzx(T) = val;
+                pub const Next = cST;
 
                 pub inline fn handler_normal(_: @This(), gst: *GST) void {
                     if (enter_fn) |ef| ef(val, gst);
@@ -127,12 +128,13 @@ pub fn Witness(
 
         .Fun => |fun_stru| {
             return struct {
-                pub const WitnessCurrentState: sdzx(T) = val;
-
                 const cSTFun = @field(T, @tagName(fun_stru.fun) ++ "ST");
                 const args = fun_stru.args;
                 const args_tuple = sliceToTuple(sdzx(T), args){};
                 const cST = @call(.auto, cSTFun, args_tuple);
+
+                pub const WitnessCurrentState: sdzx(T) = val;
+                pub const Next = cST;
 
                 pub inline fn handler_normal(_: @This(), gst: *GST) void {
                     if (enter_fn) |ef| ef(val, gst);
@@ -201,16 +203,6 @@ pub const Graph = struct {
         self.edge_array_list.deinit(gpa);
     }
 
-    pub fn insert_node(graph: *@This(), gpa: std.mem.Allocator, T: type, val: sdzx(T)) !void {
-        const node_label = try std.fmt.allocPrint(gpa, "{}", .{val});
-        const id: u32 = Adler32.hash(node_label);
-        if (graph.node_set.get(id)) |_| {
-            gpa.free(node_label);
-        } else {
-            try graph.node_set.put(gpa, id, node_label);
-        }
-    }
-
     pub fn insert_edge(
         graph: *@This(),
         gpa: std.mem.Allocator,
@@ -244,39 +236,54 @@ pub fn generate_graph(gpa: std.mem.Allocator, T: type, graph: *Graph) !void {
         const field_name = enum_field.name;
         const cST = @field(T, field_name ++ "ST");
         const tag: T = @enumFromInt(enum_field.value);
-        const FromST: SDZX = SDZX.V(tag);
-        try graph.insert_node(gpa, T, FromST);
 
-        switch (@typeInfo(@TypeOf(cST))) {
-            .type => {
-                switch (@typeInfo(cST)) {
-                    .@"union" => |union_fields| {
-                        inline for (union_fields.fields) |field| {
-                            const edge_label = field.name;
-                            const wit = field.type;
-                            const ToST: SDZX = wit.WitnessCurrentState;
-                            try graph.insert_node(gpa, T, ToST);
-                            try graph.insert_edge(gpa, T, FromST, ToST, edge_label);
-                        }
-                    },
-                    .@"struct" => |stru| blk: {
-                        inline for (stru.fields) |field| {
-                            if (@hasField(field.type, "WitnessCurrentState")) {
-                                const edge_label = field.name;
-                                const wit = field.type;
-                                const ToST: SDZX = wit.WitnessCurrentState;
-                                try graph.insert_node(gpa, T, ToST);
-                                try graph.insert_edge(gpa, T, FromST, ToST, edge_label);
+        const from: SDZX = SDZX.V(tag);
+
+        const m_union: ?type =
+            blk: switch (@typeInfo(@TypeOf(cST))) {
+                .type => {
+                    break :blk cST;
+                },
+                .@"fn" => break :blk null,
+                else => @compileError("Unsupport!"),
+            };
+        if (m_union) |un| {
+            dsp_search(gpa, T, from, un, graph);
+        }
+    }
+}
+
+fn dsp_search(gpa: std.mem.Allocator, T: type, from: sdzx(T), cST: type, graph: *Graph) void {
+    const from_str = std.fmt.allocPrint(gpa, "{}", .{from}) catch unreachable;
+    const id: u32 = Adler32.hash(from_str);
+    if (graph.node_set.get(id)) |_| {
+        gpa.free(from_str);
+    } else {
+        graph.node_set.put(gpa, id, from_str) catch unreachable;
+        switch (@typeInfo(cST)) {
+            .@"union" => |un| {
+                inline for (un.fields) |field| {
+                    const edge_label = field.name;
+                    const wit = field.type;
+                    if (@hasDecl(wit, "WitnessCurrentState")) {
+                        const ToST: sdzx(T) = wit.WitnessCurrentState;
+                        graph.insert_edge(gpa, T, from, ToST, edge_label) catch unreachable;
+                        dsp_search(gpa, T, ToST, wit.Next, graph);
+                    } else blk: {
+                        inline for (@typeInfo(wit).@"struct".fields) |wit_field| {
+                            if (@hasDecl(wit_field.type, "WitnessCurrentState")) {
+                                const wit_wit = wit_field.type;
+                                const ToST: sdzx(T) = wit_wit.WitnessCurrentState;
+                                graph.insert_edge(gpa, T, from, ToST, edge_label) catch unreachable;
+                                dsp_search(gpa, T, ToST, wit_wit.Next, graph);
                                 break :blk;
                             }
                         }
                         @compileError("Need Witness field!");
-                    },
-                    else => @compileError("Not support!"),
+                    }
                 }
             },
-            .@"fn" => {},
-            else => @compileError("Unsupport!"),
+            else => @compileError("Not support!"),
         }
     }
 }

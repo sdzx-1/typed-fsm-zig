@@ -76,6 +76,11 @@ pub fn main() anyerror!void {
 
     var ist = Atm.State.init(window);
 
+    var graph = typedFsm.Graph.init;
+    try typedFsm.generate_graph(gpa, Atm, &graph);
+
+    std.debug.print("{}\n", .{graph});
+
     const wa = Atm.EWit(.ready){};
     wa.handler_normal(&ist);
 }

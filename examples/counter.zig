@@ -2,6 +2,14 @@ const std = @import("std");
 const typedFsm = @import("typed_fsm");
 
 pub fn main() !void {
+    var gpa_instance = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa = gpa_instance.allocator();
+
+    var graph = typedFsm.Graph.init;
+    try typedFsm.generate_graph(gpa, Example, &graph);
+
+    std.debug.print("{}\n", .{graph});
+
     std.debug.print("----------------------------\n", .{});
     var st: Example.State = .{};
     const wa = Example.EWit(.a){};
