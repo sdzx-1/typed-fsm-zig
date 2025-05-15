@@ -426,122 +426,123 @@ fn s2Handler(val: Witness(Exmaple, .exit, .s2), ref: *i32) void {
 
 ```
 
-The above is a complete introduction to the core ideas of typed-fsm-zig. Next, I will introduce the required programming specifications.
+The above is a complete introduction to the core ideas of typed-fsm-zig.
+<!-- Next, I will introduce the required programming specifications. -->
 
-# 4. What programming specifications are required for typed-fsm-zig
-## 1. Implicit naming specifications that need to be met between states and message collections
-Take ATM as an example:
+<!-- # 4. What programming specifications are required for typed-fsm-zig -->
+<!-- ## 1. Implicit naming specifications that need to be met between states and message collections -->
+<!-- Take ATM as an example: -->
 
-exit -- exitMsg
+<!-- exit -- exitMsg -->
 
-ready -- readyMsg
+<!-- ready -- readyMsg -->
 
-cardInserted -- cardInsertedMsg
+<!-- cardInserted -- cardInsertedMsg -->
 
-session -- sessionMsg
+<!-- session -- sessionMsg -->
 
 
-```zig
+<!-- ```zig -->
 
-const AtmSt = enum {
-    exit,
-    ready,
-    cardInserted,
-    session,
+<!-- const AtmSt = enum { -->
+<!--     exit, -->
+<!--     ready, -->
+<!--     cardInserted, -->
+<!--     session, -->
 
-    pub fn exitMsg(_: AtmSt) type {
-        return void;
-    }
+<!--     pub fn exitMsg(_: AtmSt) type { -->
+<!--         return void; -->
+<!--     } -->
 
-    pub fn readyMsg(end: AtmSt) type {
-        return union(enum) {
-            ExitAtm: WitFn(end, .exit),
-            InsertCard: WitFn(end, .cardInserted),
+<!--     pub fn readyMsg(end: AtmSt) type { -->
+<!--         return union(enum) { -->
+<!--             ExitAtm: WitFn(end, .exit), -->
+<!--             InsertCard: WitFn(end, .cardInserted), -->
 
-            pub fn genMsg() @This() {
-                ...
-            }
-        };
-    }
+<!--             pub fn genMsg() @This() { -->
+<!--                 ... -->
+<!--             } -->
+<!--         }; -->
+<!--     } -->
 
-    pub fn cardInsertedMsg(end: AtmSt) type {
-        return union(enum) {
-            Correct: WitFn(end, .session),
-            Incorrect: WitFn(end, .cardInserted),
-            EjectCard: WitFn(end, .ready),
+<!--     pub fn cardInsertedMsg(end: AtmSt) type { -->
+<!--         return union(enum) { -->
+<!--             Correct: WitFn(end, .session), -->
+<!--             Incorrect: WitFn(end, .cardInserted), -->
+<!--             EjectCard: WitFn(end, .ready), -->
 
-            pub fn genMsg(ist: *const InternalState) @This() {
-                 ...
-            }
-        };
-    }
+<!--             pub fn genMsg(ist: *const InternalState) @This() { -->
+<!--                  ... -->
+<!--             } -->
+<!--         }; -->
+<!--     } -->
 
-    pub fn sessionMsg(end: AtmSt) type {
-        return union(enum) {
-            Disponse: struct { v: usize, wit: WitFn(end, .session) = .{} },
-            EjectCard: WitFn(end, .ready),
+<!--     pub fn sessionMsg(end: AtmSt) type { -->
+<!--         return union(enum) { -->
+<!--             Disponse: struct { v: usize, wit: WitFn(end, .session) = .{} }, -->
+<!--             EjectCard: WitFn(end, .ready), -->
 
-            pub fn genMsg(ist: *const InternalState) @This() {
-                ...
-            }
-        };
-    }
-};
-```
+<!--             pub fn genMsg(ist: *const InternalState) @This() { -->
+<!--                 ... -->
+<!--             } -->
+<!--         }; -->
+<!--     } -->
+<!-- }; -->
+<!-- ``` -->
 
-## 2. In addition to the exit status, other messages need to contain the genMsg function to generate messages, and any message must have a witness
-## 3. State machines need to define exit status. Although you may never exit the state machine, the exit status acts on the type and is indispensable
-## 4. Use tail recursive syntax when calling other handlers, and handle the witness attached to the message at the end of the statement block
+<!-- ## 2. In addition to the exit status, other messages need to contain the genMsg function to generate messages, and any message must have a witness -->
+<!-- ## 3. State machines need to define exit status. Although you may never exit the state machine, the exit status acts on the type and is indispensable -->
+<!-- ## 4. Use tail recursive syntax when calling other handlers, and handle the witness attached to the message at the end of the statement block -->
 
-Since the implementation of zig lacks support for Mcbride Indexed Monad semantics, the type system cannot prevent you from doing the following:
-```zig
+<!-- Since the implementation of zig lacks support for Mcbride Indexed Monad semantics, the type system cannot prevent you from doing the following: -->
+<!-- ```zig -->
 
-// Use the processing function s1Handler in the above example and modify it to the following.
-// The s1Handler here should not be called multiple times. In the Haskell version of typed-fsm, the type system can check the type error here, but it cannot be done in the zig implementation.
-// Therefore, we require that there can only be one statement to handle Witness at the end of the statement block
-fn s2Handler(val: Witness(Exmaple, .exit, .s2), ref: *i32) void {
-    switch (val.getMsg()()) {
-        .S2Tos1 => |wit| {
-            ref.* += 2;
-            s1Handler(wit, ref);
-            s1Handler(wit, ref);
-            s1Handler(wit, ref);
-            s1Handler(wit, ref);
-        },
-    }
-}
+<!-- // Use the processing function s1Handler in the above example and modify it to the following. -->
+<!-- // The s1Handler here should not be called multiple times. In the Haskell version of typed-fsm, the type system can check the type error here, but it cannot be done in the zig implementation. -->
+<!-- // Therefore, we require that there can only be one statement to handle Witness at the end of the statement block -->
+<!-- fn s2Handler(val: Witness(Exmaple, .exit, .s2), ref: *i32) void { -->
+<!--     switch (val.getMsg()()) { -->
+<!--         .S2Tos1 => |wit| { -->
+<!--             ref.* += 2; -->
+<!--             s1Handler(wit, ref); -->
+<!--             s1Handler(wit, ref); -->
+<!--             s1Handler(wit, ref); -->
+<!--             s1Handler(wit, ref); -->
+<!--         }, -->
+<!--     } -->
+<!-- } -->
 
-```
+<!-- ``` -->
 
-Since the state machine needs to run for a long time, if tail recursion is not used in the inter-recursive function, stack overflow will occur.
+<!-- Since the state machine needs to run for a long time, if tail recursion is not used in the inter-recursive function, stack overflow will occur. -->
 
-Therefore, in the above Example demo, if I change 20 to a large value, such as 2 million, then stack overflow will definitely occur, because the call in the demo does not use tail recursion.
+<!-- Therefore, in the above Example demo, if I change 20 to a large value, such as 2 million, then stack overflow will definitely occur, because the call in the demo does not use tail recursion. -->
 
-In the actual ATM example, their calling method is:
-```zig
-pub fn readyHandler(comptime w: AtmSt.EWitness(.ready), ist: *InternalState) void {
-    switch (w.getMsg()()) {
-        .ExitAtm => |witness| {
-            witness.terminal();
-        },
-        .InsertCard => |witness| {
-            ist.times = 0;
-            @call(.always_tail, cardInsertedHandler, .{ witness, ist });
-        },
-    }
-}
+<!-- In the actual ATM example, their calling method is: -->
+<!-- ```zig -->
+<!-- pub fn readyHandler(comptime w: AtmSt.EWitness(.ready), ist: *InternalState) void { -->
+<!--     switch (w.getMsg()()) { -->
+<!--         .ExitAtm => |witness| { -->
+<!--             witness.terminal(); -->
+<!--         }, -->
+<!--         .InsertCard => |witness| { -->
+<!--             ist.times = 0; -->
+<!--             @call(.always_tail, cardInsertedHandler, .{ witness, ist }); -->
+<!--         }, -->
+<!--     } -->
+<!-- } -->
 
-```
+<!-- ``` -->
 
-Here `@call(.always_tail, cardInsertedHandler, .{ witness, ist })` is the tail recursive syntax in zig. Due to the need of this syntax, the Witness in the handler function is made known at compile time (here is `comptime w: AtmSt.EWitness(.ready)`).
+<!-- Here `@call(.always_tail, cardInsertedHandler, .{ witness, ist })` is the tail recursive syntax in zig. Due to the need of this syntax, the Witness in the handler function is made known at compile time (here is `comptime w: AtmSt.EWitness(.ready)`). -->
 
-Following these four requirements, you can get strong type safety guarantees, enough for you to enjoy using state machines!
+<!-- Following these four requirements, you can get strong type safety guarantees, enough for you to enjoy using state machines! -->
 
-# 5. The next functions that can be enhanced
-For now, I can think of the following points:
-1. In the state machine, the generation and processing of messages are separated, so multiple message generation front ends can be defined, and the processing part can switch the message generation front end at will. For example, we can define a test state machine front end to generate test data. When the processing part calls the code of the test front end, the behavior of the entire state machine can be tested.
-2. Support sub-states, which will make the type more complex.
-3. Develop a gui system based on [typed-fsm-zig](https://discourse.haskell.org/t/try-to-combine-typed-fsm-with-gui-to-produce-unexpected-abstract-combinations/10026). The state machine has high practicality in gui, and combining them is a good choice.
-4. Develop typed-session-zig to implement a type-safe communication protocol. I have implemented a [practical type-safe multi-role communication protocol framework](https://github.com/sdzx-1/typed-session) in Haskell, which should be able to be ported to zig.
+<!-- # 5. The next functions that can be enhanced -->
+<!-- For now, I can think of the following points: -->
+<!-- 1. In the state machine, the generation and processing of messages are separated, so multiple message generation front ends can be defined, and the processing part can switch the message generation front end at will. For example, we can define a test state machine front end to generate test data. When the processing part calls the code of the test front end, the behavior of the entire state machine can be tested. -->
+<!-- 2. Support sub-states, which will make the type more complex. -->
+<!-- 3. Develop a gui system based on [typed-fsm-zig](https://discourse.haskell.org/t/try-to-combine-typed-fsm-with-gui-to-produce-unexpected-abstract-combinations/10026). The state machine has high practicality in gui, and combining them is a good choice. -->
+<!-- 4. Develop typed-session-zig to implement a type-safe communication protocol. I have implemented a [practical type-safe multi-role communication protocol framework](https://github.com/sdzx-1/typed-session) in Haskell, which should be able to be ported to zig. -->
 
-[typed-fsm-zig的详细介绍](./doc/介绍类型化有限状态机.md)
+<!-- [typed-fsm-zig的详细介绍](./doc/介绍类型化有限状态机.md) -->
