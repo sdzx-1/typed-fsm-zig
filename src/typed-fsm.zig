@@ -5,7 +5,7 @@ pub fn sdzx(TYPE: type) type {
     comptime {
         switch (@typeInfo(TYPE)) {
             .@"enum" => {},
-            else => @compileError(std.fmt.comptimePrint("Unspoort type: {any}, Only support enum!", .{TYPE})),
+            else => @compileError(std.fmt.comptimePrint("Unspport type: {any}, Only support enum!", .{TYPE})),
         }
     }
 
