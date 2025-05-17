@@ -1,4 +1,7 @@
 # Run demo
+
+Minimum zig version is 0.14,
+
 You can run the demo with the following command:
 
 # Demo atm-gui
