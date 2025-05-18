@@ -1,6 +1,28 @@
 const std = @import("std");
 const Adler32 = std.hash.Adler32;
 
+///This Zig code defines a generic **recursive sum type** (tagged union) called `sdzx` that represents either:
+///1. A terminal value (`Term`) of some enum type `TYPE`, or
+///2. A function application (`Fun`) with:
+///  - A function symbol (also of type `TYPE`)
+///  - Arguments (a slice of recursive `sdzx(TYPE)` values)
+///### Key Features:
+///1. **Type Safety**:
+///  ```zig
+///  comptime {
+///      switch (@typeInfo(TYPE)) {
+///          .@"enum" => {},  // Only allows enum types
+///          else => @compileError(...)
+///      }
+///  }
+///  ```
+///2. **Constructor Functions**:
+///  - `V(term)` creates a terminal value
+///  - `C(fun, args)` creates a function application
+///3. **Pretty Printing**:
+///Implements `format()` for debug/output:
+///  - Terms print as `"TagName"`
+///  - Functions print as `"FunName(arg1, arg2)"`
 pub fn sdzx(TYPE: type) type {
     comptime {
         switch (@typeInfo(TYPE)) {
@@ -45,6 +67,7 @@ pub fn sdzx(TYPE: type) type {
     };
 }
 
+///Converts a tuple into a recursive `sdzx(TYPE)` structure.
 pub fn val_to_sdzx(TYPE: type, comptime val: anytype) sdzx(TYPE) {
     if (@TypeOf(val) == TYPE) return .{ .Term = val };
     const args_type_info = @typeInfo(@TypeOf(val));
@@ -76,7 +99,7 @@ pub fn val_to_sdzx(TYPE: type, comptime val: anytype) sdzx(TYPE) {
 
     return .{ .Fun = .{ .fun = fun, .args = &tmp_args } };
 }
-
+///Converts a slice of values into a Zig tuple type.
 fn sliceToTuple(T: type, comptime args: []const T) type {
     var fields: [args.len]std.builtin.Type.StructField = undefined;
     for (args, 0..) |arg, i| {
@@ -100,6 +123,11 @@ fn sliceToTuple(T: type, comptime args: []const T) type {
     return @Type(.{ .@"struct" = tuple });
 }
 
+///The `Witness` function is a **generic type constructor** that generates a **state witness type**
+///based on a given state machine state value (`sdzx(T)`). This witness type encapsulates:
+///- The current state information
+///- The next state type
+///- State transition handlers (with support for tail-call optimization)
 pub fn Witness(
     T: type,
     val: sdzx(T),
@@ -223,6 +251,11 @@ pub const Graph = struct {
     }
 };
 
+///The `generate_graph` function constructs a state transition graph for a given enum type `T` by analyzing its associated state types (following the `<Tag>ST` naming convention). It builds the graph by:
+///
+///1. Discovering all valid state transitions
+///2. Processing each enum variant's associated state type
+///3. Delegating graph construction to `dsp_search` for complex state types
 pub fn generate_graph(gpa: std.mem.Allocator, T: type, graph: *Graph) !void {
     const SDZX = sdzx(T);
     const T_info = @typeInfo(T);
@@ -255,6 +288,7 @@ pub fn generate_graph(gpa: std.mem.Allocator, T: type, graph: *Graph) !void {
     }
 }
 
+///Recursively builds a directed graph representation of a state machine by analyzing state transitions through compile-time type introspection.
 fn dsp_search(gpa: std.mem.Allocator, T: type, from: sdzx(T), cST: type, graph: *Graph) void {
     const from_str = std.fmt.allocPrint(gpa, "{}", .{from}) catch unreachable;
     const id: u32 = Adler32.hash(from_str);
