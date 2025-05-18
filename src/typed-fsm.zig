@@ -233,22 +233,24 @@ pub fn generate_graph(gpa: std.mem.Allocator, T: type, graph: *Graph) !void {
     const fields = T_info.@"enum".fields;
 
     inline for (fields) |enum_field| {
-        const field_name = enum_field.name;
-        const cST = @field(T, field_name ++ "ST");
-        const tag: T = @enumFromInt(enum_field.value);
+        const cST_name = enum_field.name ++ "ST";
+        if (@hasDecl(T, cST_name)) {
+            const cST = @field(T, cST_name);
+            const tag: T = @enumFromInt(enum_field.value);
 
-        const from: SDZX = SDZX.V(tag);
+            const from: SDZX = SDZX.V(tag);
 
-        const m_union: ?type =
-            blk: switch (@typeInfo(@TypeOf(cST))) {
-                .type => {
-                    break :blk cST;
-                },
-                .@"fn" => break :blk null,
-                else => @compileError("Unsupport!"),
-            };
-        if (m_union) |un| {
-            dsp_search(gpa, T, from, un, graph);
+            const m_union: ?type =
+                blk: switch (@typeInfo(@TypeOf(cST))) {
+                    .type => {
+                        break :blk cST;
+                    },
+                    .@"fn" => break :blk null,
+                    else => @compileError("Unsupport!"),
+                };
+            if (m_union) |un| {
+                dsp_search(gpa, T, from, un, graph);
+            }
         }
     }
 }
