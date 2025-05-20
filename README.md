@@ -1,15 +1,3 @@
-# Run demo
-
-Minimum zig version is 0.14,
-
-You can run the demo with the following command:
-
-# Demo atm-gui
-```shell
-zig build -Dexamples atm-gui
-```
-
-default pin: 1234
 
 # Building and using
 ## In an existing project
@@ -33,6 +21,11 @@ Now add the modules to your module as you would normally:
 ```zig
     exe_mod.addImport("typed_fsm", typed_fsm.module("root"));
 ```
+
+# Examples
+
+[typed-fsm-examples](https://github.com/sdzx-1/typed-fsm-examples)
+
 
 # 1. Briefly introduce the advantages of typed finite state machines
 ## 1.1 Introduction to finite state machines
