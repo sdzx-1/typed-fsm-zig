@@ -133,6 +133,7 @@ pub fn Witness(
     val: sdzx(T),
     GST: type,
     enter_fn: ?fn (sdzx(T), *const GST) void,
+    allow_error: bool,
 ) type {
     switch (val) {
         .Term => |current_st| {
@@ -142,12 +143,12 @@ pub fn Witness(
                 pub const WitnessCurrentState: sdzx(T) = val;
                 pub const Next = cST;
 
-                pub inline fn handler_normal(_: @This(), gst: *GST) void {
+                pub inline fn handler_normal(_: @This(), gst: *GST) if (allow_error) anyerror!void else void {
                     if (enter_fn) |ef| ef(val, gst);
                     return @call(.auto, cST.handler, .{gst});
                 }
 
-                pub inline fn handler(_: @This(), gst: *GST) void {
+                pub inline fn handler(_: @This(), gst: *GST) if (allow_error) anyerror!void else void {
                     if (enter_fn) |ef| ef(val, gst);
                     return @call(.always_tail, cST.handler, .{gst});
                 }
@@ -164,12 +165,12 @@ pub fn Witness(
                 pub const WitnessCurrentState: sdzx(T) = val;
                 pub const Next = cST;
 
-                pub inline fn handler_normal(_: @This(), gst: *GST) void {
+                pub inline fn handler_normal(_: @This(), gst: *GST) if (allow_error) anyerror!void else void {
                     if (enter_fn) |ef| ef(val, gst);
                     return @call(.auto, cST.handler, .{gst});
                 }
 
-                pub inline fn handler(_: @This(), gst: *GST) void {
+                pub inline fn handler(_: @This(), gst: *GST) if (allow_error) anyerror!void else void {
                     if (enter_fn) |ef| ef(val, gst);
                     return @call(.always_tail, cST.handler, .{gst});
                 }
