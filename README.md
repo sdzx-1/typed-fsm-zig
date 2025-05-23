@@ -26,6 +26,10 @@ Now add the modules to your module as you would normally:
 
 [typed-fsm-examples](https://github.com/sdzx-1/typed-fsm-examples)
 
+# Discord
+
+https://discord.gg/zUK2Zk9m
+
 
 <!-- # 1. Briefly introduce the advantages of typed finite state machines -->
 <!-- ## 1.1 Introduction to finite state machines -->
