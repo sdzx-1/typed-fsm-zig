@@ -132,7 +132,7 @@ pub fn Witness(
     T: type,
     val: sdzx(T),
     GST: type,
-    enter_fn: ?fn (sdzx(T), *const GST) void,
+    enter_fn: ?fn (sdzx(T), *GST) void,
 ) type {
     switch (val) {
         .Term => |current_st| {
