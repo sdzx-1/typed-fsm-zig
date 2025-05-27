@@ -150,9 +150,8 @@ pub fn Witness(
                 pub const WitnessCurrentState: sdzx(T) = val;
                 pub const Next = cST;
 
-                pub inline fn conthandler(_: @This(), gst: *GST) ContR(GST) {
-                    if (enter_fn) |ef| ef(val, gst);
-                    return cST.conthandler(gst);
+                pub inline fn conthandler(_: @This()) *const fn (GST) ContR(GST) {
+                    return cST.conthandler;
                 }
 
                 pub inline fn handler_normal(_: @This(), gst: *GST) void {
@@ -177,9 +176,8 @@ pub fn Witness(
                 pub const WitnessCurrentState: sdzx(T) = val;
                 pub const Next = cST;
 
-                pub inline fn conthandler(_: @This(), gst: *GST) ContR(GST) {
-                    if (enter_fn) |ef| ef(val, gst);
-                    return cST.conthandler(gst);
+                pub inline fn conthandler(_: @This()) *const fn (GST) ContR(GST) {
+                    return cST.conthandler;
                 }
 
                 pub inline fn handler_normal(_: @This(), gst: *GST) void {
