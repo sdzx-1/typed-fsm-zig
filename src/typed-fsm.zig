@@ -123,6 +123,14 @@ fn sliceToTuple(T: type, comptime args: []const T) type {
     return @Type(.{ .@"struct" = tuple });
 }
 
+pub fn ContR(GST: type) type {
+    return union(enum) {
+        Exit: void,
+        Wait: void,
+        Next: *const fn (*GST) ContR(GST),
+    };
+}
+
 ///The `Witness` function is a **generic type constructor** that generates a **state witness type**
 ///based on a given state machine state value (`sdzx(T)`). This witness type encapsulates:
 ///- The current state information
@@ -141,6 +149,11 @@ pub fn Witness(
 
                 pub const WitnessCurrentState: sdzx(T) = val;
                 pub const Next = cST;
+
+                pub inline fn conthandler(_: @This(), gst: *GST) ContR(GST) {
+                    if (enter_fn) |ef| ef(val, gst);
+                    return cST.conthandler(gst);
+                }
 
                 pub inline fn handler_normal(_: @This(), gst: *GST) void {
                     if (enter_fn) |ef| ef(val, gst);
@@ -163,6 +176,11 @@ pub fn Witness(
 
                 pub const WitnessCurrentState: sdzx(T) = val;
                 pub const Next = cST;
+
+                pub inline fn conthandler(_: @This(), gst: *GST) ContR(GST) {
+                    if (enter_fn) |ef| ef(val, gst);
+                    return cST.conthandler(gst);
+                }
 
                 pub inline fn handler_normal(_: @This(), gst: *GST) void {
                     if (enter_fn) |ef| ef(val, gst);
