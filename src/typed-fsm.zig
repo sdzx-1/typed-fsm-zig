@@ -152,7 +152,7 @@ pub fn Witness(
 
                 pub inline fn conthandler(_: @This()) *const fn (*GST) ContR(GST) {
                     const tmp = struct {
-                        pub inline fn fun(gst: *GST) ContR(GST) {
+                        pub fn fun(gst: *GST) ContR(GST) {
                             if (enter_fn) |ef| ef(val, gst);
                             return cST.conthandler(gst);
                         }
@@ -184,7 +184,7 @@ pub fn Witness(
 
                 pub inline fn conthandler(_: @This()) *const fn (*GST) ContR(GST) {
                     const tmp = struct {
-                        pub inline fn fun(gst: *GST) ContR(GST) {
+                        pub fn fun(gst: *GST) ContR(GST) {
                             if (enter_fn) |ef| ef(val, gst);
                             return cST.conthandler(gst);
                         }
