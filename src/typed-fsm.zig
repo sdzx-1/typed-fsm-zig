@@ -150,7 +150,7 @@ pub fn Witness(
                 pub const WitnessCurrentState: sdzx(T) = val;
                 pub const Next = cST;
 
-                pub inline fn conthandler(_: @This()) *const fn (GST) ContR(GST) {
+                pub inline fn conthandler(_: @This()) *const fn (*GST) ContR(GST) {
                     return cST.conthandler;
                 }
 
@@ -176,7 +176,7 @@ pub fn Witness(
                 pub const WitnessCurrentState: sdzx(T) = val;
                 pub const Next = cST;
 
-                pub inline fn conthandler(_: @This()) *const fn (GST) ContR(GST) {
+                pub inline fn conthandler(_: @This()) *const fn (*GST) ContR(GST) {
                     return cST.conthandler;
                 }
 
