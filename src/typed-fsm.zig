@@ -253,9 +253,6 @@ pub const Graph = struct {
         }
         self.node_set.deinit(gpa);
 
-        for (self.edge_array_list.items) |*edge| {
-            gpa.free(edge.label);
-        }
         self.edge_array_list.deinit(gpa);
     }
 
