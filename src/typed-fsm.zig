@@ -249,12 +249,12 @@ pub const Graph = struct {
     pub fn deinit(self: *Self, gpa: std.mem.Allocator) !void {
         var node_set_iter = self.node_set.iterator();
         while (node_set_iter.next()) |entry| {
-            gpa.free(entry.value_ptr);
+            gpa.free(entry.value_ptr.*);
         }
         self.node_set.deinit(gpa);
 
         for (self.edge_array_list.items) |*edge| {
-            gpa.free(&edge.name);
+            gpa.free(edge.label);
         }
         self.edge_array_list.deinit(gpa);
     }
