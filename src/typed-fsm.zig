@@ -123,12 +123,38 @@ fn sliceToTuple(T: type, comptime args: []const T) type {
     return @Type(.{ .@"struct" = tuple });
 }
 
+/// Defines a continuation result type for state machine handlers
+///
+/// This type represents the possible outcomes when executing a state handler in a
+/// continuation-passing style (CPS) state machine. It allows handlers to:
+/// 1. Terminate execution (Exit)
+/// 2. Pause and wait for external input (Wait)
+/// 3. Continue to the next state (Next)
 pub fn ContR(GST: type) type {
     return union(enum) {
         Exit: void,
         Wait: void,
         Next: *const fn (*GST) ContR(GST),
     };
+}
+
+/// Converts a symbolic expression (sdzx) to its corresponding state type (cST)
+///
+/// This function performs a compile-time transformation from a symbolic state representation
+/// to the actual state machine type. It handles both terminal states (Term) and function
+/// states (Fun) with arguments.
+///
+pub fn sdzx_to_cst(T: type, val: sdzx(T)) type {
+    switch (val) {
+        .Term => |current_st| return @field(T, @tagName(current_st) ++ "ST"),
+        .Fun => |fun_stru| {
+            const cSTFun = @field(T, @tagName(fun_stru.fun) ++ "ST");
+            const args = fun_stru.args;
+            const args_tuple = sliceToTuple(sdzx(T), args){};
+            const cST = @call(.auto, cSTFun, args_tuple);
+            return cST;
+        },
+    }
 }
 
 ///The `Witness` function is a **generic type constructor** that generates a **state witness type**
@@ -142,68 +168,32 @@ pub fn Witness(
     GST: type,
     enter_fn: ?fn (sdzx(T), *GST) void,
 ) type {
-    switch (val) {
-        .Term => |current_st| {
-            return struct {
-                const cST = @field(T, @tagName(current_st) ++ "ST");
+    return struct {
+        const cST = sdzx_to_cst(T, val);
 
-                pub const WitnessCurrentState: sdzx(T) = val;
-                pub const Next = cST;
+        pub const WitnessCurrentState: sdzx(T) = val;
+        pub const Next = cST;
 
-                pub inline fn conthandler(_: @This()) *const fn (*GST) ContR(GST) {
-                    const tmp = struct {
-                        pub fn fun(gst: *GST) ContR(GST) {
-                            if (enter_fn) |ef| ef(val, gst);
-                            return cST.conthandler(gst);
-                        }
-                    };
-                    return &tmp.fun;
-                }
-
-                pub inline fn handler_normal(_: @This(), gst: *GST) void {
+        pub inline fn conthandler(_: @This()) *const fn (*GST) ContR(GST) {
+            const tmp = struct {
+                pub fn fun(gst: *GST) ContR(GST) {
                     if (enter_fn) |ef| ef(val, gst);
-                    return @call(.auto, cST.handler, .{gst});
-                }
-
-                pub inline fn handler(_: @This(), gst: *GST) void {
-                    if (enter_fn) |ef| ef(val, gst);
-                    return @call(.always_tail, cST.handler, .{gst});
+                    return cST.conthandler(gst);
                 }
             };
-        },
+            return &tmp.fun;
+        }
 
-        .Fun => |fun_stru| {
-            return struct {
-                const cSTFun = @field(T, @tagName(fun_stru.fun) ++ "ST");
-                const args = fun_stru.args;
-                const args_tuple = sliceToTuple(sdzx(T), args){};
-                const cST = @call(.auto, cSTFun, args_tuple);
+        pub inline fn handler_normal(_: @This(), gst: *GST) void {
+            if (enter_fn) |ef| ef(val, gst);
+            return @call(.auto, cST.handler, .{gst});
+        }
 
-                pub const WitnessCurrentState: sdzx(T) = val;
-                pub const Next = cST;
-
-                pub inline fn conthandler(_: @This()) *const fn (*GST) ContR(GST) {
-                    const tmp = struct {
-                        pub fn fun(gst: *GST) ContR(GST) {
-                            if (enter_fn) |ef| ef(val, gst);
-                            return cST.conthandler(gst);
-                        }
-                    };
-                    return &tmp.fun;
-                }
-
-                pub inline fn handler_normal(_: @This(), gst: *GST) void {
-                    if (enter_fn) |ef| ef(val, gst);
-                    return @call(.auto, cST.handler, .{gst});
-                }
-
-                pub inline fn handler(_: @This(), gst: *GST) void {
-                    if (enter_fn) |ef| ef(val, gst);
-                    return @call(.always_tail, cST.handler, .{gst});
-                }
-            };
-        },
-    }
+        pub inline fn handler(_: @This(), gst: *GST) void {
+            if (enter_fn) |ef| ef(val, gst);
+            return @call(.always_tail, cST.handler, .{gst});
+        }
+    };
 }
 
 pub const Graph = struct {
