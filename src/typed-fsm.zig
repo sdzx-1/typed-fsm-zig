@@ -6,23 +6,6 @@ const Adler32 = std.hash.Adler32;
 ///2. A function application (`Fun`) with:
 ///  - A function symbol (also of type `TYPE`)
 ///  - Arguments (a slice of recursive `sdzx(TYPE)` values)
-///### Key Features:
-///1. **Type Safety**:
-///  ```zig
-///  comptime {
-///      switch (@typeInfo(TYPE)) {
-///          .@"enum" => {},  // Only allows enum types
-///          else => @compileError(...)
-///      }
-///  }
-///  ```
-///2. **Constructor Functions**:
-///  - `V(term)` creates a terminal value
-///  - `C(fun, args)` creates a function application
-///3. **Pretty Printing**:
-///Implements `format()` for debug/output:
-///  - Terms print as `"TagName"`
-///  - Functions print as `"FunName(arg1, arg2)"`
 pub fn sdzx(TYPE: type) type {
     comptime {
         switch (@typeInfo(TYPE)) {
@@ -264,77 +247,77 @@ pub const Graph = struct {
 
         try graph.edge_array_list.append(gpa, .{ .from = from_id, .to = to_id, .label = label });
     }
-};
 
-///The `generate_graph` function constructs a state transition graph for a given enum type `T` by analyzing its associated state types (following the `<Tag>ST` naming convention). It builds the graph by:
-///
-///1. Discovering all valid state transitions
-///2. Processing each enum variant's associated state type
-///3. Delegating graph construction to `dsp_search` for complex state types
-pub fn generate_graph(gpa: std.mem.Allocator, T: type, graph: *Graph) !void {
-    const SDZX = sdzx(T);
-    const T_info = @typeInfo(T);
-    switch (T_info) {
-        .@"enum" => {},
-        else => @compileError("Need enum!"),
-    }
-    const fields = T_info.@"enum".fields;
+    ///The `generate` function constructs a state transition graph for a given enum type `T` by analyzing its associated state types (following the `<Tag>ST` naming convention). It builds the graph by:
+    ///
+    ///1. Discovering all valid state transitions
+    ///2. Processing each enum variant's associated state type
+    ///3. Delegating graph construction to `dsp_search` for complex state types
+    pub fn generate(graph: *@This(), gpa: std.mem.Allocator, T: type) !void {
+        const SDZX = sdzx(T);
+        const T_info = @typeInfo(T);
+        switch (T_info) {
+            .@"enum" => {},
+            else => @compileError("Need enum!"),
+        }
+        const fields = T_info.@"enum".fields;
 
-    inline for (fields) |enum_field| {
-        const cST_name = enum_field.name ++ "ST";
-        if (@hasDecl(T, cST_name)) {
-            const cST = @field(T, cST_name);
-            const tag: T = @enumFromInt(enum_field.value);
+        inline for (fields) |enum_field| {
+            const cST_name = enum_field.name ++ "ST";
+            if (@hasDecl(T, cST_name)) {
+                const cST = @field(T, cST_name);
+                const tag: T = @enumFromInt(enum_field.value);
 
-            const from: SDZX = SDZX.V(tag);
+                const from: SDZX = SDZX.V(tag);
 
-            const m_union: ?type =
-                blk: switch (@typeInfo(@TypeOf(cST))) {
-                    .type => {
-                        break :blk cST;
-                    },
-                    .@"fn" => break :blk null,
-                    else => @compileError("Unsupport!"),
-                };
-            if (m_union) |un| {
-                dsp_search(gpa, T, from, un, graph);
+                const m_union: ?type =
+                    blk: switch (@typeInfo(@TypeOf(cST))) {
+                        .type => {
+                            break :blk cST;
+                        },
+                        .@"fn" => break :blk null,
+                        else => @compileError("Unsupport!"),
+                    };
+                if (m_union) |un| {
+                    dsp_search(gpa, T, from, un, graph);
+                }
             }
         }
     }
-}
 
-///Recursively builds a directed graph representation of a state machine by analyzing state transitions through compile-time type introspection.
-fn dsp_search(gpa: std.mem.Allocator, T: type, from: sdzx(T), cST: type, graph: *Graph) void {
-    const from_str = std.fmt.allocPrint(gpa, "{}", .{from}) catch unreachable;
-    const id: u32 = Adler32.hash(from_str);
-    if (graph.node_set.get(id)) |_| {
-        gpa.free(from_str);
-    } else {
-        graph.node_set.put(gpa, id, from_str) catch unreachable;
-        switch (@typeInfo(cST)) {
-            .@"union" => |un| {
-                inline for (un.fields) |field| {
-                    const edge_label = field.name;
-                    const wit = field.type;
-                    if (@hasDecl(wit, "WitnessCurrentState")) {
-                        const ToST: sdzx(T) = wit.WitnessCurrentState;
-                        graph.insert_edge(gpa, T, from, ToST, edge_label) catch unreachable;
-                        dsp_search(gpa, T, ToST, wit.Next, graph);
-                    } else blk: {
-                        inline for (@typeInfo(wit).@"struct".fields) |wit_field| {
-                            if (@hasDecl(wit_field.type, "WitnessCurrentState")) {
-                                const wit_wit = wit_field.type;
-                                const ToST: sdzx(T) = wit_wit.WitnessCurrentState;
-                                graph.insert_edge(gpa, T, from, ToST, edge_label) catch unreachable;
-                                dsp_search(gpa, T, ToST, wit_wit.Next, graph);
-                                break :blk;
+    ///Recursively builds a directed graph representation of a state machine by analyzing state transitions through compile-time type introspection.
+    fn dsp_search(gpa: std.mem.Allocator, T: type, from: sdzx(T), cST: type, graph: *Graph) void {
+        const from_str = std.fmt.allocPrint(gpa, "{}", .{from}) catch unreachable;
+        const id: u32 = Adler32.hash(from_str);
+        if (graph.node_set.get(id)) |_| {
+            gpa.free(from_str);
+        } else {
+            graph.node_set.put(gpa, id, from_str) catch unreachable;
+            switch (@typeInfo(cST)) {
+                .@"union" => |un| {
+                    inline for (un.fields) |field| {
+                        const edge_label = field.name;
+                        const wit = field.type;
+                        if (@hasDecl(wit, "WitnessCurrentState")) {
+                            const ToST: sdzx(T) = wit.WitnessCurrentState;
+                            graph.insert_edge(gpa, T, from, ToST, edge_label) catch unreachable;
+                            dsp_search(gpa, T, ToST, wit.Next, graph);
+                        } else blk: {
+                            inline for (@typeInfo(wit).@"struct".fields) |wit_field| {
+                                if (@hasDecl(wit_field.type, "WitnessCurrentState")) {
+                                    const wit_wit = wit_field.type;
+                                    const ToST: sdzx(T) = wit_wit.WitnessCurrentState;
+                                    graph.insert_edge(gpa, T, from, ToST, edge_label) catch unreachable;
+                                    dsp_search(gpa, T, ToST, wit_wit.Next, graph);
+                                    break :blk;
+                                }
                             }
+                            @compileError("Need Witness field!");
                         }
-                        @compileError("Need Witness field!");
                     }
-                }
-            },
-            else => @compileError("Not support!"),
+                },
+                else => @compileError("Not support!"),
+            }
         }
     }
-}
+};
