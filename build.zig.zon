@@ -23,24 +23,7 @@
     // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
-    .dependencies = .{
-        .zglfw = .{
-            .url = "git+https://github.com/zig-gamedev/zglfw#fa12b57541976561358c850337af8d08647879d6",
-            .hash = "zglfw-0.10.0-dev-zgVDNJKcIQDR2-i-qz-FlR6uUdODN0DNPQA9X1G034qr",
-        },
-        .zopengl = .{
-            .url = "git+https://github.com/zig-gamedev/zopengl#27f5f228bc1f6da4a4f6acaca07d1cc5ad135171",
-            .hash = "zopengl-0.6.0-dev-5-tnz59jCAB6WpFFql6YdVtwBLlOcReCYVOnxQTPD-xC",
-        },
-        .zgui = .{
-            .url = "git+https://github.com/zig-gamedev/zgui#21dcc288ac5ee70b1fca789d53a06d5c49d51e5e",
-            .hash = "zgui-0.6.0-dev--L6sZKTBaADLHp09LtUUifdfFpsczwbnyH7r2ajfVPuJ",
-        },
-        .zgpu = .{
-            .url = "git+https://github.com/zig-gamedev/zgpu#3ae4a71af16df3a7dfa95023bba1a1e6a0bfb80d",
-            .hash = "zgpu-0.12.0-dev-nqFT5BCgCADqzg95ZvomJREp6oIl3NTubfyiUNHc18Pr",
-        },
-    },
+    .dependencies = .{},
     .paths = .{
         "build.zig",
         "build.zig.zon",
