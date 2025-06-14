@@ -5,13 +5,13 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const typed_fsm_mod = b.addModule("root", .{
-        .root_source_file = b.path("src/typed-fsm.zig"),
+        .root_source_file = b.path("src/polystate.zig"),
         .target = target,
         .optimize = optimize,
     });
 
     const lib = b.addStaticLibrary(.{
-        .name = "typed_fsm",
+        .name = "polystate",
         .root_module = typed_fsm_mod,
     });
 

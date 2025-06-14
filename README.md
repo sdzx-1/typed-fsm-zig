@@ -1,15 +1,15 @@
+## PolyState: Composable Finite State Machines
 
-# Building and using
-## In an existing project
-Download and add type-fsm-zig as a dependency by running the following command in your project root:
+## Building and using in an existing project
+Download and add ploystate as a dependency by running the following command in your project root:
 ```shell
-zig fetch --save git+https://github.com/sdzx-1/typed-fsm-zig.git
+zig fetch --save git+https://github.com/sdzx-1/polystate.git
 ```
 
-Then add typed-fsm-zig as a dependency and import its modules and artifact in your build.zig:
+Then add ploystate as a dependency and import its modules and artifact in your build.zig:
 
 ```zig
-    const typed_fsm = b.dependency("typed_fsm", .{
+    const polystate = b.dependency("polystate", .{
         .target = target,
         .optimize = optimize,
     });
@@ -19,14 +19,14 @@ Then add typed-fsm-zig as a dependency and import its modules and artifact in yo
 Now add the modules to your module as you would normally:
 
 ```zig
-    exe_mod.addImport("typed_fsm", typed_fsm.module("root"));
+    exe_mod.addImport("polystate", typed_fsm.module("root"));
 ```
 
-# Examples
+## Examples
 
 [typed-fsm-examples](https://github.com/sdzx-1/typed-fsm-examples)
 
-# Discord
+## Discord
 
 https://discord.gg/zUK2Zk9m
 
