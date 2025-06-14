@@ -24,7 +24,7 @@ Now add the modules to your module as you would normally:
 
 ## Examples
 
-[typed-fsm-examples](https://github.com/sdzx-1/typed-fsm-examples)
+[polystate-examples](https://github.com/sdzx-1/polystate-examples)
 
 ## Discord
 
