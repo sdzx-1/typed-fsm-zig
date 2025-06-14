@@ -85,14 +85,16 @@ pub fn Witness(
 ///
 /// This type represents the possible outcomes when executing a state handler in a
 /// continuation-passing style (CPS) state machine. It allows handlers to:
-/// 1. Terminate execution (Exit)
-/// 2. Pause and wait for external input (Wait)
-/// 3. Continue to the next state (Next)
+/// 1. Terminate cycle (Exit)
+/// 2. Wait for external input (Wait)
+/// 3. Continue to the next cycle (Next)
+/// 4. Continue to the current cycle (Next)
 pub fn ContR(GST: type) type {
     return union(enum) {
         Exit: void,
         Wait: void,
         Next: *const fn (*GST) ContR(GST),
+        Curr: *const fn (*GST) ContR(GST),
     };
 }
 
