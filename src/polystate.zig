@@ -1,7 +1,4 @@
-const std = @import("std");
-const Adler32 = std.hash.Adler32;
-
-///This Zig code defines a generic **recursive sum type** (tagged union) called `sdzx` that represents either:
+///Defines a generic **recursive sum type** (tagged union) called `sdzx` that represents either:
 ///1. A terminal value (`Term`) of some enum type `TYPE`, or
 ///2. A function application (`Fun`) with:
 ///  - A function symbol (also of type `TYPE`)
@@ -48,6 +45,74 @@ pub fn sdzx(TYPE: type) type {
             }
         }
     };
+}
+
+///The `Witness` function is a **generic type constructor** that generates a **state witness type**
+///based on a given state machine state value (`sdzx(T)`). This witness type encapsulates:
+pub fn Witness(
+    T: type,
+    val: sdzx(T),
+    GST: type,
+    enter_fn: ?fn (sdzx(T), *GST) void,
+) type {
+    return struct {
+        pub const CST = sdzx_to_cst(T, val);
+        pub const WitnessCurrentState: sdzx(T) = val;
+
+        pub inline fn conthandler(_: @This()) *const fn (*GST) ContR(GST) {
+            const tmp = struct {
+                pub fn fun(gst: *GST) ContR(GST) {
+                    if (enter_fn) |ef| ef(val, gst);
+                    return CST.conthandler(gst);
+                }
+            };
+            return &tmp.fun;
+        }
+
+        pub inline fn handler_normal(_: @This(), gst: *GST) void {
+            if (enter_fn) |ef| ef(val, gst);
+            return @call(.auto, CST.handler, .{gst});
+        }
+
+        pub inline fn handler(_: @This(), gst: *GST) void {
+            if (enter_fn) |ef| ef(val, gst);
+            return @call(.always_tail, CST.handler, .{gst});
+        }
+    };
+}
+
+/// Defines a continuation result type for state machine handlers
+///
+/// This type represents the possible outcomes when executing a state handler in a
+/// continuation-passing style (CPS) state machine. It allows handlers to:
+/// 1. Terminate execution (Exit)
+/// 2. Pause and wait for external input (Wait)
+/// 3. Continue to the next state (Next)
+pub fn ContR(GST: type) type {
+    return union(enum) {
+        Exit: void,
+        Wait: void,
+        Next: *const fn (*GST) ContR(GST),
+    };
+}
+
+/// Converts a symbolic expression (sdzx) to its corresponding state type (cST)
+///
+/// This function performs a compile-time transformation from a symbolic state representation
+/// to the actual state machine type. It handles both terminal states (Term) and function
+/// states (Fun) with arguments.
+///
+pub fn sdzx_to_cst(T: type, val: sdzx(T)) type {
+    switch (val) {
+        .Term => |current_st| return @field(T, @tagName(current_st) ++ "ST"),
+        .Fun => |fun_stru| {
+            const cSTFun = @field(T, @tagName(fun_stru.fun) ++ "ST");
+            const args = fun_stru.args;
+            const args_tuple = sliceToTuple(sdzx(T), args){};
+            const cST = @call(.auto, cSTFun, args_tuple);
+            return cST;
+        },
+    }
 }
 
 ///Converts a tuple into a recursive `sdzx(TYPE)` structure.
@@ -104,79 +169,6 @@ fn sliceToTuple(T: type, comptime args: []const T) type {
         .is_tuple = true,
     };
     return @Type(.{ .@"struct" = tuple });
-}
-
-/// Defines a continuation result type for state machine handlers
-///
-/// This type represents the possible outcomes when executing a state handler in a
-/// continuation-passing style (CPS) state machine. It allows handlers to:
-/// 1. Terminate execution (Exit)
-/// 2. Pause and wait for external input (Wait)
-/// 3. Continue to the next state (Next)
-pub fn ContR(GST: type) type {
-    return union(enum) {
-        Exit: void,
-        Wait: void,
-        Next: *const fn (*GST) ContR(GST),
-    };
-}
-
-/// Converts a symbolic expression (sdzx) to its corresponding state type (cST)
-///
-/// This function performs a compile-time transformation from a symbolic state representation
-/// to the actual state machine type. It handles both terminal states (Term) and function
-/// states (Fun) with arguments.
-///
-pub fn sdzx_to_cst(T: type, val: sdzx(T)) type {
-    switch (val) {
-        .Term => |current_st| return @field(T, @tagName(current_st) ++ "ST"),
-        .Fun => |fun_stru| {
-            const cSTFun = @field(T, @tagName(fun_stru.fun) ++ "ST");
-            const args = fun_stru.args;
-            const args_tuple = sliceToTuple(sdzx(T), args){};
-            const cST = @call(.auto, cSTFun, args_tuple);
-            return cST;
-        },
-    }
-}
-
-///The `Witness` function is a **generic type constructor** that generates a **state witness type**
-///based on a given state machine state value (`sdzx(T)`). This witness type encapsulates:
-///- The current state information
-///- The next state type
-///- State transition handlers (with support for tail-call optimization)
-pub fn Witness(
-    T: type,
-    val: sdzx(T),
-    GST: type,
-    enter_fn: ?fn (sdzx(T), *GST) void,
-) type {
-    return struct {
-        const cST = sdzx_to_cst(T, val);
-
-        pub const WitnessCurrentState: sdzx(T) = val;
-        pub const Next = cST;
-
-        pub inline fn conthandler(_: @This()) *const fn (*GST) ContR(GST) {
-            const tmp = struct {
-                pub fn fun(gst: *GST) ContR(GST) {
-                    if (enter_fn) |ef| ef(val, gst);
-                    return cST.conthandler(gst);
-                }
-            };
-            return &tmp.fun;
-        }
-
-        pub inline fn handler_normal(_: @This(), gst: *GST) void {
-            if (enter_fn) |ef| ef(val, gst);
-            return @call(.auto, cST.handler, .{gst});
-        }
-
-        pub inline fn handler(_: @This(), gst: *GST) void {
-            if (enter_fn) |ef| ef(val, gst);
-            return @call(.always_tail, cST.handler, .{gst});
-        }
-    };
 }
 
 pub const Graph = struct {
@@ -301,14 +293,14 @@ pub const Graph = struct {
                         if (@hasDecl(wit, "WitnessCurrentState")) {
                             const ToST: sdzx(T) = wit.WitnessCurrentState;
                             graph.insert_edge(gpa, T, from, ToST, edge_label) catch unreachable;
-                            dsp_search(gpa, T, ToST, wit.Next, graph);
+                            dsp_search(gpa, T, ToST, wit.CST, graph);
                         } else blk: {
                             inline for (@typeInfo(wit).@"struct".fields) |wit_field| {
                                 if (@hasDecl(wit_field.type, "WitnessCurrentState")) {
                                     const wit_wit = wit_field.type;
                                     const ToST: sdzx(T) = wit_wit.WitnessCurrentState;
                                     graph.insert_edge(gpa, T, from, ToST, edge_label) catch unreachable;
-                                    dsp_search(gpa, T, ToST, wit_wit.Next, graph);
+                                    dsp_search(gpa, T, ToST, wit_wit.CST, graph);
                                     break :blk;
                                 }
                             }
@@ -321,3 +313,6 @@ pub const Graph = struct {
         }
     }
 };
+
+const std = @import("std");
+const Adler32 = std.hash.Adler32;
