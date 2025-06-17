@@ -50,14 +50,14 @@ pub fn sdzx(TYPE: type) type {
 ///The `Witness` function is a **generic type constructor** that generates a **state witness type**
 ///based on a given state machine state value (`sdzx(T)`). This witness type encapsulates:
 pub fn Witness(
-    T: type,
-    val: sdzx(T),
-    GST: type,
-    enter_fn: ?fn (sdzx(T), *GST) void,
+    FST: type, //FSM Type
+    GST: type, //Global State Type
+    enter_fn: ?fn (sdzx(FST), *GST) void,
+    val: sdzx(FST),
 ) type {
     return struct {
-        pub const CST = sdzx_to_cst(T, val);
-        pub const WitnessCurrentState: sdzx(T) = val;
+        pub const CST = sdzx_to_cst(FST, val);
+        pub const WitnessCurrentState: sdzx(FST) = val;
 
         pub inline fn conthandler(_: @This()) *const fn (*GST) ContR(GST) {
             const tmp = struct {
@@ -88,7 +88,7 @@ pub fn Witness(
 /// 1. Terminate cycle (Exit)
 /// 2. Wait for external input (Wait)
 /// 3. Continue to the next cycle (Next)
-/// 4. Continue to the current cycle (Next)
+/// 4. Continue to the current cycle (Curr)
 pub fn ContR(GST: type) type {
     return union(enum) {
         Exit: void,
