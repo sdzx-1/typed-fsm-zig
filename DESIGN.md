@@ -315,7 +315,7 @@ We can naturally implement this effect through state composition. By designing `
 
 ```
 
-Second: [text](https://github.com/sdzx-1/ray-game/blob/master/src/select.zig)
+Second: [select](https://github.com/sdzx-1/ray-game/blob/master/src/select.zig)
 
 I used raylib to implement a generic semantic: selection via mouse (hereinafter referred to as "selection").
 
