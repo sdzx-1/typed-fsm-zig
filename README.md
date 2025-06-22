@@ -26,6 +26,8 @@ Now add the modules to your module as you would normally:
 
 [polystate-examples](https://github.com/sdzx-1/polystate-examples)
 
+[ray-game](https://github.com/sdzx-1/ray-game)
+
 # Discord
 
 https://discord.gg/zUK2Zk9m
