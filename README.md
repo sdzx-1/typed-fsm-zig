@@ -1,12 +1,12 @@
 Polystate: Composable Finite State Machines
 
 # Building and using in an existing project
-Download and add ploystate as a dependency by running the following command in your project root:
+Download and add polystate as a dependency by running the following command in your project root:
 ```shell
 zig fetch --save git+https://github.com/sdzx-1/polystate.git
 ```
 
-Then add ploystate as a dependency and import its modules and artifact in your build.zig:
+Then add polystate as a dependency and import its modules and artifact in your build.zig:
 
 ```zig
     const polystate = b.dependency("polystate", .{
