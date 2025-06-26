@@ -1,176 +1,87 @@
-///Defines a generic **recursive sum type** (tagged union) called `sdzx` that represents either:
-///1. A terminal value (`Term`) of some enum type `TYPE`, or
-///2. A function application (`Fun`) with:
-///  - A function symbol (also of type `TYPE`)
-///  - Arguments (a slice of recursive `sdzx(TYPE)` values)
-pub fn sdzx(TYPE: type) type {
-    comptime {
-        switch (@typeInfo(TYPE)) {
-            .@"enum" => {},
-            else => @compileError(std.fmt.comptimePrint("Unspport type: {any}, Only support enum!", .{TYPE})),
-        }
-    }
+const std = @import("std");
+const Adler32 = std.hash.Adler32;
 
-    return union(enum) {
-        Term: TYPE,
-        Fun: struct { fun: TYPE, args: []const sdzx(TYPE) },
+pub const Exit = union(enum) {};
 
-        pub fn V(term: TYPE) sdzx(TYPE) {
-            return .{ .Term = term };
-        }
+pub fn Witness(Context: type, enter_fn: ?fn (*Context, type, type) void, Current: type) type {
+    if (Current == Exit) {
+        return struct {
+            pub const CST = Current;
+            pub inline fn handler(_: *Context) void {}
 
-        pub fn C(fun: TYPE, args: []const sdzx(TYPE)) sdzx(TYPE) {
-            return .{ .Fun = .{ .fun = fun, .args = args } };
-        }
-
-        pub fn format(
-            val: @This(),
-            comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            switch (val) {
-                .Term => |va| {
-                    try writer.writeAll(@tagName(va));
-                },
-                .Fun => |v| {
-                    try writer.writeAll(@tagName(v.fun));
-                    try writer.writeAll("(");
-                    for (v.args, 0..) |arg, i| {
-                        if (i != 0) try writer.writeAll(", ");
-                        try format(arg, fmt, options, writer);
-                    }
-                    try writer.writeAll(")");
-                },
+            pub fn conthandler(_: *Context) ContResult(Context) {
+                return .Exit;
             }
-        }
-    };
-}
+        };
+    } else {
+        return struct {
+            pub const CST = Current;
 
-///The `Witness` function is a **generic type constructor** that generates a **state witness type**
-///based on a given state machine state value (`sdzx(T)`). This witness type encapsulates:
-pub fn Witness(
-    FST: type, //FSM Type
-    GST: type, //Global State Type
-    enter_fn: ?fn (sdzx(FST), *GST) void,
-    val: sdzx(FST),
-) type {
-    return struct {
-        pub const CST = sdzx_to_cst(FST, val);
-        pub const WitnessCurrentState: sdzx(FST) = val;
-
-        pub inline fn conthandler(_: @This()) *const fn (*GST) ContR(GST) {
-            const tmp = struct {
-                pub fn fun(gst: *GST) ContR(GST) {
-                    if (enter_fn) |ef| ef(val, gst);
-                    return CST.conthandler(gst);
+            pub fn handler_normal(ctx: *Context) void {
+                switch (Current.handler(ctx)) {
+                    inline else => |wit, tag| {
+                        _ = tag;
+                        if (enter_fn) |fun| fun(ctx, Current, @TypeOf(wit).CST);
+                        @call(.auto, @TypeOf(wit).handler, .{ctx});
+                    },
                 }
-            };
-            return &tmp.fun;
-        }
+            }
 
-        pub inline fn handler_normal(_: @This(), gst: *GST) void {
-            if (enter_fn) |ef| ef(val, gst);
-            return @call(.auto, CST.handler, .{gst});
-        }
+            pub fn handler(ctx: *Context) void {
+                switch (Current.handler(ctx)) {
+                    inline else => |wit, tag| {
+                        _ = tag;
+                        if (enter_fn) |fun| fun(ctx, Current, @TypeOf(wit).CST);
+                        @call(.always_tail, @TypeOf(wit).handler, .{ctx});
+                    },
+                }
+            }
 
-        pub inline fn handler(_: @This(), gst: *GST) void {
-            if (enter_fn) |ef| ef(val, gst);
-            return @call(.always_tail, CST.handler, .{gst});
-        }
-    };
-}
-
-/// Defines a continuation result type for state machine handlers
-///
-/// This type represents the possible outcomes when executing a state handler in a
-/// continuation-passing style (CPS) state machine. It allows handlers to:
-/// 1. Terminate cycle (Exit)
-/// 2. Wait for external input (Wait)
-/// 3. Continue to the next cycle (Next)
-/// 4. Continue to the current cycle (Curr)
-pub fn ContR(GST: type) type {
-    return union(enum) {
-        Exit: void,
-        Wait: void,
-        Next: *const fn (*GST) ContR(GST),
-        Curr: *const fn (*GST) ContR(GST),
-    };
-}
-
-/// Converts a symbolic expression (sdzx) to its corresponding state type (cST)
-///
-/// This function performs a compile-time transformation from a symbolic state representation
-/// to the actual state machine type. It handles both terminal states (Term) and function
-/// states (Fun) with arguments.
-///
-pub fn sdzx_to_cst(T: type, val: sdzx(T)) type {
-    switch (val) {
-        .Term => |current_st| return @field(T, @tagName(current_st) ++ "ST"),
-        .Fun => |fun_stru| {
-            const cSTFun = @field(T, @tagName(fun_stru.fun) ++ "ST");
-            const args = fun_stru.args;
-            const args_tuple = sliceToTuple(sdzx(T), args){};
-            const cST = @call(.auto, cSTFun, args_tuple);
-            return cST;
-        },
-    }
-}
-
-///Converts a tuple into a recursive `sdzx(TYPE)` structure.
-pub fn val_to_sdzx(TYPE: type, comptime val: anytype) sdzx(TYPE) {
-    if (@TypeOf(val) == TYPE) return .{ .Term = val };
-    const args_type_info = @typeInfo(@TypeOf(val));
-    switch (args_type_info) {
-        .@"struct" => {},
-        .enum_literal => @compileError(std.fmt.comptimePrint("Expect type: {}, actual type: enum_literal", .{TYPE})),
-        else => @compileError("Need struct!"),
-    }
-
-    const fields = args_type_info.@"struct".fields;
-
-    var fun: TYPE = undefined;
-    var args: [fields.len - 1]sdzx(TYPE) = undefined;
-
-    for (fields, 0..) |field, i| {
-        const ptr: *const field.type = @ptrCast(@alignCast(field.default_value_ptr.?));
-
-        if (i == 0) {
-            if (field.type != TYPE)
-                @compileError(std.fmt.comptimePrint("Expect type: {}, actual type: {}", .{ TYPE, field.type }));
-            fun = ptr.*;
-        } else {
-            args[i - 1] = val_to_sdzx(TYPE, ptr.*);
-        }
-    }
-
-    // Need const to return address
-    const tmp_args: [fields.len - 1]sdzx(TYPE) = comptime args;
-
-    return .{ .Fun = .{ .fun = fun, .args = &tmp_args } };
-}
-///Converts a slice of values into a Zig tuple type.
-fn sliceToTuple(T: type, comptime args: []const T) type {
-    var fields: [args.len]std.builtin.Type.StructField = undefined;
-    for (args, 0..) |arg, i| {
-        _ = arg;
-        fields[i] = .{
-            .name = std.fmt.comptimePrint("{d}", .{i}),
-            .type = T,
-            .default_value_ptr = &args[i],
-            .is_comptime = true,
-            .alignment = @alignOf(T),
+            pub fn conthandler(ctx: *Context) ContResult(Context) {
+                const contFun: fn (*Context) NextState(Current) = Current.conthandler;
+                switch (contFun(ctx)) {
+                    inline .Exit => return .Exit,
+                    inline .NoTrasition => return .NoTrasition,
+                    inline .Next => |wit0| {
+                        switch (wit0) {
+                            inline else => |wit, tag| {
+                                _ = tag;
+                                if (enter_fn) |fun| fun(ctx, Current, @TypeOf(wit).CST);
+                                return .{ .Next = @TypeOf(wit).conthandler };
+                            },
+                        }
+                    },
+                    inline .Current => |wit0| {
+                        switch (wit0) {
+                            inline else => |wit, tag| {
+                                _ = tag;
+                                if (enter_fn) |fun| fun(ctx, Current, @TypeOf(wit).CST);
+                                return .{ .Current = @TypeOf(wit).conthandler };
+                            },
+                        }
+                    },
+                }
+            }
         };
     }
+}
 
-    const tuple: std.builtin.Type.Struct = .{
-        .layout = .auto,
-        .backing_integer = null,
-        .fields = &fields,
-        .decls = &.{},
-        .is_tuple = true,
+pub fn ContResult(Context: type) type {
+    return union(enum) {
+        Exit: void,
+        NoTrasition: void,
+        Next: *const fn (*Context) ContResult(Context),
+        Current: *const fn (*Context) ContResult(Context),
     };
-    return @Type(.{ .@"struct" = tuple });
+}
+
+pub fn NextState(State: type) type {
+    return union(enum) {
+        Exit: void,
+        NoTrasition: void,
+        Next: State,
+        Current: State,
+    };
 }
 
 pub const Graph = struct {
@@ -214,107 +125,46 @@ pub const Graph = struct {
     }
 
     pub fn deinit(self: *Self, gpa: std.mem.Allocator) !void {
-        var node_set_iter = self.node_set.iterator();
-        while (node_set_iter.next()) |entry| {
-            gpa.free(entry.value_ptr.*);
-        }
         self.node_set.deinit(gpa);
-
         self.edge_array_list.deinit(gpa);
     }
 
     pub fn insert_edge(
         graph: *@This(),
         gpa: std.mem.Allocator,
-        T: type,
-        from: sdzx(T),
-        to: sdzx(T),
+        from: type,
+        to: type,
         label: []const u8,
     ) !void {
-        const from_str = try std.fmt.allocPrint(gpa, "{}", .{from});
-        const from_id: u32 = Adler32.hash(from_str);
-        gpa.free(from_str);
-
-        const to_str = try std.fmt.allocPrint(gpa, "{}", .{to});
-        const to_id: u32 = Adler32.hash(to_str);
-        gpa.free(to_str);
-
+        const from_id: u32 = Adler32.hash(@typeName(from));
+        const to_id: u32 = Adler32.hash(@typeName(to));
         try graph.edge_array_list.append(gpa, .{ .from = from_id, .to = to_id, .label = label });
     }
 
-    ///The `generate` function constructs a state transition graph for a given enum type `T` by analyzing its associated state types (following the `<Tag>ST` naming convention). It builds the graph by:
-    ///
-    ///1. Discovering all valid state transitions
-    ///2. Processing each enum variant's associated state type
-    ///3. Delegating graph construction to `dsp_search` for complex state types
-    pub fn generate(graph: *@This(), gpa: std.mem.Allocator, T: type) !void {
-        const SDZX = sdzx(T);
-        const T_info = @typeInfo(T);
-        switch (T_info) {
-            .@"enum" => {},
-            else => @compileError("Need enum!"),
-        }
-        const fields = T_info.@"enum".fields;
-
-        inline for (fields) |enum_field| {
-            const cST_name = enum_field.name ++ "ST";
-            if (@hasDecl(T, cST_name)) {
-                const cST = @field(T, cST_name);
-                const tag: T = @enumFromInt(enum_field.value);
-
-                const from: SDZX = SDZX.V(tag);
-
-                const m_union: ?type =
-                    blk: switch (@typeInfo(@TypeOf(cST))) {
-                        .type => {
-                            break :blk cST;
-                        },
-                        .@"fn" => break :blk null,
-                        else => @compileError("Unsupport!"),
-                    };
-                if (m_union) |un| {
-                    dsp_search(gpa, T, from, un, graph);
-                }
-            }
-        }
+    pub fn generate(graph: *@This(), gpa: std.mem.Allocator, Wit: type) !void {
+        const exit_str = @typeName(Exit);
+        const id: u32 = Adler32.hash(exit_str);
+        try graph.node_set.put(gpa, id, exit_str);
+        dsp_generate(graph, gpa, Wit);
     }
 
-    ///Recursively builds a directed graph representation of a state machine by analyzing state transitions through compile-time type introspection.
-    fn dsp_search(gpa: std.mem.Allocator, T: type, from: sdzx(T), cST: type, graph: *Graph) void {
-        const from_str = std.fmt.allocPrint(gpa, "{}", .{from}) catch unreachable;
+    fn dsp_generate(graph: *@This(), gpa: std.mem.Allocator, Wit: type) void {
+        const Current = Wit.CST;
+        const from_str = @typeName(Current);
         const id: u32 = Adler32.hash(from_str);
-        if (graph.node_set.get(id)) |_| {
-            gpa.free(from_str);
-        } else {
+        if (graph.node_set.get(id)) |_| {} else {
             graph.node_set.put(gpa, id, from_str) catch unreachable;
-            switch (@typeInfo(cST)) {
+            switch (@typeInfo(Current)) {
                 .@"union" => |un| {
                     inline for (un.fields) |field| {
                         const edge_label = field.name;
-                        const wit = field.type;
-                        if (@hasDecl(wit, "WitnessCurrentState")) {
-                            const ToST: sdzx(T) = wit.WitnessCurrentState;
-                            graph.insert_edge(gpa, T, from, ToST, edge_label) catch unreachable;
-                            dsp_search(gpa, T, ToST, wit.CST, graph);
-                        } else blk: {
-                            inline for (@typeInfo(wit).@"struct".fields) |wit_field| {
-                                if (@hasDecl(wit_field.type, "WitnessCurrentState")) {
-                                    const wit_wit = wit_field.type;
-                                    const ToST: sdzx(T) = wit_wit.WitnessCurrentState;
-                                    graph.insert_edge(gpa, T, from, ToST, edge_label) catch unreachable;
-                                    dsp_search(gpa, T, ToST, wit_wit.CST, graph);
-                                    break :blk;
-                                }
-                            }
-                            @compileError("Need Witness field!");
-                        }
+                        const NextWit = field.type;
+                        graph.insert_edge(gpa, Current, NextWit.CST, edge_label) catch unreachable;
+                        dsp_generate(graph, gpa, NextWit);
                     }
                 },
-                else => @compileError("Not support!"),
+                else => @compileError("Only support tagged union!"),
             }
         }
     }
 };
-
-const std = @import("std");
-const Adler32 = std.hash.Adler32;
