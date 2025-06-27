@@ -10,7 +10,7 @@ pub fn Witness(Context: type, enter_fn: ?fn (*Context, type, type) void, Current
             pub inline fn handler(_: *Context) void {}
 
             pub fn conthandler(_: *Context) ContResult(Context) {
-                return .Exit;
+                return .exit;
             }
         };
     } else {
@@ -40,23 +40,23 @@ pub fn Witness(Context: type, enter_fn: ?fn (*Context, type, type) void, Current
             pub fn conthandler(ctx: *Context) ContResult(Context) {
                 const contFun: fn (*Context) NextState(Current) = Current.conthandler;
                 switch (contFun(ctx)) {
-                    inline .Exit => return .Exit,
-                    inline .NoTrasition => return .NoTrasition,
-                    inline .Next => |wit0| {
+                    inline .exit => return .exit,
+                    inline .no_trasition => return .no_trasition,
+                    inline .next => |wit0| {
                         switch (wit0) {
                             inline else => |wit, tag| {
                                 _ = tag;
                                 if (enter_fn) |fun| fun(ctx, Current, @TypeOf(wit).CST);
-                                return .{ .Next = @TypeOf(wit).conthandler };
+                                return .{ .next = @TypeOf(wit).conthandler };
                             },
                         }
                     },
-                    inline .Current => |wit0| {
+                    inline .current => |wit0| {
                         switch (wit0) {
                             inline else => |wit, tag| {
                                 _ = tag;
                                 if (enter_fn) |fun| fun(ctx, Current, @TypeOf(wit).CST);
-                                return .{ .Current = @TypeOf(wit).conthandler };
+                                return .{ .current = @TypeOf(wit).conthandler };
                             },
                         }
                     },
@@ -68,19 +68,19 @@ pub fn Witness(Context: type, enter_fn: ?fn (*Context, type, type) void, Current
 
 pub fn ContResult(Context: type) type {
     return union(enum) {
-        Exit: void,
-        NoTrasition: void,
-        Next: *const fn (*Context) ContResult(Context),
-        Current: *const fn (*Context) ContResult(Context),
+        exit: void,
+        no_trasition: void,
+        next: *const fn (*Context) ContResult(Context),
+        current: *const fn (*Context) ContResult(Context),
     };
 }
 
 pub fn NextState(State: type) type {
     return union(enum) {
-        Exit: void,
-        NoTrasition: void,
-        Next: State,
-        Current: State,
+        exit: void,
+        no_trasition: void,
+        next: State,
+        current: State,
     };
 }
 
