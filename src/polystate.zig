@@ -60,7 +60,6 @@ pub fn FSM(
             pub fn conthandler(ctx: *Context) ContResult(Context) {
                 const contFun: fn (*Context) NextState(State) = State.conthandler;
                 switch (contFun(ctx)) {
-                    inline .exit => return .exit,
                     inline .no_trasition => return .no_trasition,
                     inline .next => |wit0| {
                         switch (wit0) {
@@ -113,7 +112,6 @@ pub fn ContResult(context: type) type {
 pub fn NextState(state: type) type {
     const State = state;
     return union(enum) {
-        exit: void,
         no_trasition: void,
         next: State,
         current: State,
