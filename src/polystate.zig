@@ -3,10 +3,23 @@ const Adler32 = std.hash.Adler32;
 
 pub const Exit = union(enum) {};
 
-pub fn Witness(Context: type, enter_fn: ?fn (*Context, type, type) void, Current: type) type {
-    if (Current == Exit) {
+// FSM       : fn (type) type , Example
+// State     : type           , A, B
+// FSMState  : type           , Example(A), Example(B)
+
+pub fn FSM(
+    comptime id: usize,
+    context: type,
+    enter_fn: ?fn (*context, type) void,
+    state: type,
+) type {
+    if (state == Exit) {
         return struct {
-            pub const CST = Current;
+            pub const ID = id;
+            pub const Context = context;
+            pub const EnterFn = enter_fn;
+            pub const State = state;
+
             pub inline fn handler(_: *Context) void {}
 
             pub fn conthandler(_: *Context) ContResult(Context) {
@@ -15,30 +28,37 @@ pub fn Witness(Context: type, enter_fn: ?fn (*Context, type, type) void, Current
         };
     } else {
         return struct {
-            pub const CST = Current;
+            pub const ID = id;
+            pub const Context = context;
+            pub const EnterFn = enter_fn;
+            pub const State = state;
 
             pub fn handler_normal(ctx: *Context) void {
-                switch (Current.handler(ctx)) {
+                switch (State.handler(ctx)) {
                     inline else => |wit, tag| {
                         _ = tag;
-                        if (enter_fn) |fun| fun(ctx, Current, @TypeOf(wit).CST);
-                        @call(.auto, @TypeOf(wit).handler, .{ctx});
+                        const FSMState = @TypeOf(wit);
+                        CheckConsistency(FSMState.ID, ID);
+                        if (enter_fn) |fun| fun(ctx, State);
+                        @call(.auto, FSMState.handler, .{ctx});
                     },
                 }
             }
 
             pub fn handler(ctx: *Context) void {
-                switch (Current.handler(ctx)) {
+                switch (State.handler(ctx)) {
                     inline else => |wit, tag| {
                         _ = tag;
-                        if (enter_fn) |fun| fun(ctx, Current, @TypeOf(wit).CST);
-                        @call(.always_tail, @TypeOf(wit).handler, .{ctx});
+                        const FSMState = @TypeOf(wit);
+                        CheckConsistency(FSMState.ID, ID);
+                        if (enter_fn) |fun| fun(ctx, State);
+                        @call(.always_tail, FSMState.handler, .{ctx});
                     },
                 }
             }
 
             pub fn conthandler(ctx: *Context) ContResult(Context) {
-                const contFun: fn (*Context) NextState(Current) = Current.conthandler;
+                const contFun: fn (*Context) NextState(State) = State.conthandler;
                 switch (contFun(ctx)) {
                     inline .exit => return .exit,
                     inline .no_trasition => return .no_trasition,
@@ -46,8 +66,10 @@ pub fn Witness(Context: type, enter_fn: ?fn (*Context, type, type) void, Current
                         switch (wit0) {
                             inline else => |wit, tag| {
                                 _ = tag;
-                                if (enter_fn) |fun| fun(ctx, Current, @TypeOf(wit).CST);
-                                return .{ .next = @TypeOf(wit).conthandler };
+                                const FSMState = @TypeOf(wit);
+                                CheckConsistency(FSMState.ID, ID);
+                                if (enter_fn) |fun| fun(ctx, State);
+                                return .{ .next = FSMState.conthandler };
                             },
                         }
                     },
@@ -55,8 +77,10 @@ pub fn Witness(Context: type, enter_fn: ?fn (*Context, type, type) void, Current
                         switch (wit0) {
                             inline else => |wit, tag| {
                                 _ = tag;
-                                if (enter_fn) |fun| fun(ctx, Current, @TypeOf(wit).CST);
-                                return .{ .current = @TypeOf(wit).conthandler };
+                                const FSMState = @TypeOf(wit);
+                                CheckConsistency(FSMState.ID, ID);
+                                if (enter_fn) |fun| fun(ctx, State);
+                                return .{ .current = FSMState.conthandler };
                             },
                         }
                     },
@@ -66,7 +90,18 @@ pub fn Witness(Context: type, enter_fn: ?fn (*Context, type, type) void, Current
     }
 }
 
-pub fn ContResult(Context: type) type {
+fn CheckConsistency(comptime b: usize, comptime a: usize) void {
+    if (b != a) {
+        const error_str = std.fmt.comptimePrint(
+            \\The state machine IDs are inconsistent.
+            \\You used the state of state machine {d} in state machine {d}."
+        , .{ b, a });
+        @compileError(error_str);
+    }
+}
+
+pub fn ContResult(context: type) type {
+    const Context = context;
     return union(enum) {
         exit: void,
         no_trasition: void,
@@ -75,7 +110,8 @@ pub fn ContResult(Context: type) type {
     };
 }
 
-pub fn NextState(State: type) type {
+pub fn NextState(state: type) type {
+    const State = state;
     return union(enum) {
         exit: void,
         no_trasition: void,
@@ -149,7 +185,7 @@ pub const Graph = struct {
     }
 
     fn dsp_generate(graph: *@This(), gpa: std.mem.Allocator, Wit: type) void {
-        const Current = Wit.CST;
+        const Current = Wit.State;
         const from_str = @typeName(Current);
         const id: u32 = Adler32.hash(from_str);
         if (graph.node_set.get(id)) |_| {} else {
@@ -159,7 +195,7 @@ pub const Graph = struct {
                     inline for (un.fields) |field| {
                         const edge_label = field.name;
                         const NextWit = field.type;
-                        graph.insert_edge(gpa, Current, NextWit.CST, edge_label) catch unreachable;
+                        graph.insert_edge(gpa, Current, NextWit.State, edge_label) catch unreachable;
                         dsp_generate(graph, gpa, NextWit);
                     }
                 },
