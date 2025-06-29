@@ -34,30 +34,31 @@ pub fn FSM(
             pub const State = state;
 
             pub fn handler_normal(ctx: *Context) void {
+                if (enter_fn) |fun| fun(ctx, State);
                 switch (State.handler(ctx)) {
                     inline else => |wit, tag| {
                         _ = tag;
                         const FSMState = @TypeOf(wit);
                         CheckConsistency(FSMState.ID, ID);
-                        if (enter_fn) |fun| fun(ctx, State);
                         @call(.auto, FSMState.handler, .{ctx});
                     },
                 }
             }
 
             pub fn handler(ctx: *Context) void {
+                if (enter_fn) |fun| fun(ctx, State);
                 switch (State.handler(ctx)) {
                     inline else => |wit, tag| {
                         _ = tag;
                         const FSMState = @TypeOf(wit);
                         CheckConsistency(FSMState.ID, ID);
-                        if (enter_fn) |fun| fun(ctx, State);
                         @call(.always_tail, FSMState.handler, .{ctx});
                     },
                 }
             }
 
             pub fn conthandler(ctx: *Context) ContResult(Context) {
+                if (enter_fn) |fun| fun(ctx, State);
                 const contFun: fn (*Context) NextState(State) = State.conthandler;
                 switch (contFun(ctx)) {
                     inline .no_trasition => return .no_trasition,
@@ -67,7 +68,6 @@ pub fn FSM(
                                 _ = tag;
                                 const FSMState = @TypeOf(wit);
                                 CheckConsistency(FSMState.ID, ID);
-                                if (enter_fn) |fun| fun(ctx, State);
                                 return .{ .next = FSMState.conthandler };
                             },
                         }
@@ -78,7 +78,6 @@ pub fn FSM(
                                 _ = tag;
                                 const FSMState = @TypeOf(wit);
                                 CheckConsistency(FSMState.ID, ID);
-                                if (enter_fn) |fun| fun(ctx, State);
                                 return .{ .current = FSMState.conthandler };
                             },
                         }
