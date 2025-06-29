@@ -118,7 +118,7 @@ pub fn NextState(state: type) type {
 }
 
 pub const Graph = struct {
-    node_set: std.AutoHashMapUnmanaged(u32, Node),
+    node_set: std.AutoArrayHashMapUnmanaged(u32, Node),
     edge_array_list: std.ArrayListUnmanaged(Edge),
     node_id_counter: u32 = 0,
 
@@ -146,6 +146,7 @@ pub const Graph = struct {
         try writer.writeAll("digraph G {\n");
 
         { //state graph
+            try writer.writeAll("subgraph cluster_A {\n");
 
             var node_set_iter = val.node_set.iterator();
             while (node_set_iter.next()) |entry| {
@@ -162,26 +163,33 @@ pub const Graph = struct {
                 try writer.writeAll(edge.label);
                 try writer.writeAll("\"];\n");
             }
+
+            try writer.writeAll("}\n");
         }
 
         { //all_node
 
+            try writer.writeAll("subgraph cluster_B {\n");
+
             try writer.writeAll("all_node [shape=plaintext, label=<\n");
             try writer.writeAll("<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n");
 
-            var node_set_iter = val.node_set.iterator();
-            while (node_set_iter.next()) |entry| {
+            const nodes = val.node_set.values();
+
+            for (nodes) |node| {
                 try writer.writeAll("<TR>");
                 try writer.writeAll("<TD ALIGN=\"LEFT\">");
-                try std.fmt.formatIntValue(entry.value_ptr.id, "d", options, writer);
+                try std.fmt.formatIntValue(node.id, "d", options, writer);
                 try writer.writeAll(" -- ");
-                try writer.writeAll(entry.value_ptr.name);
+                try writer.writeAll(node.name);
                 try writer.writeAll("</TD>");
                 try writer.writeAll("</TR>\n");
             }
 
             try writer.writeAll("</TABLE>\n");
             try writer.writeAll(">]\n");
+
+            try writer.writeAll("}\n");
         }
 
         try writer.writeAll("}\n");
