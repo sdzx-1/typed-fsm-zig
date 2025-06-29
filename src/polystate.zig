@@ -119,8 +119,14 @@ pub fn NextState(state: type) type {
 }
 
 pub const Graph = struct {
-    node_set: std.AutoHashMapUnmanaged(u32, []const u8),
+    node_set: std.AutoHashMapUnmanaged(u32, Node),
     edge_array_list: std.ArrayListUnmanaged(Edge),
+    node_id_counter: u32 = 0,
+
+    pub const Node = struct {
+        name: []const u8,
+        id: u32,
+    };
 
     pub const Edge = struct {
         from: u32,
@@ -139,20 +145,44 @@ pub const Graph = struct {
         writer: anytype,
     ) !void {
         try writer.writeAll("digraph G {\n");
-        var node_set_iter = val.node_set.iterator();
-        while (node_set_iter.next()) |entry| {
-            try std.fmt.formatIntValue(entry.key_ptr.*, "d", options, writer);
-            try writer.writeAll(" [label = \"");
-            try writer.writeAll(entry.value_ptr.*);
-            try writer.writeAll("\"];\n");
+
+        { //state graph
+
+            var node_set_iter = val.node_set.iterator();
+            while (node_set_iter.next()) |entry| {
+                try std.fmt.formatIntValue(entry.key_ptr.*, "d", options, writer);
+                try writer.writeAll(" [label = \"");
+                try std.fmt.formatIntValue(entry.value_ptr.id, "d", options, writer);
+                try writer.writeAll("\"];\n");
+            }
+            for (val.edge_array_list.items) |edge| {
+                try std.fmt.formatIntValue(edge.from, "d", options, writer);
+                try writer.writeAll(" -> ");
+                try std.fmt.formatIntValue(edge.to, "d", options, writer);
+                try writer.writeAll(" [label = \"");
+                try writer.writeAll(edge.label);
+                try writer.writeAll("\"];\n");
+            }
         }
-        for (val.edge_array_list.items) |edge| {
-            try std.fmt.formatIntValue(edge.from, "d", options, writer);
-            try writer.writeAll(" -> ");
-            try std.fmt.formatIntValue(edge.to, "d", options, writer);
-            try writer.writeAll(" [label = \"");
-            try writer.writeAll(edge.label);
-            try writer.writeAll("\"];\n");
+
+        { //all_node
+
+            try writer.writeAll("all_node [shape=plaintext, label=<\n");
+            try writer.writeAll("<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n");
+
+            var node_set_iter = val.node_set.iterator();
+            while (node_set_iter.next()) |entry| {
+                try writer.writeAll("<TR>");
+                try writer.writeAll("<TD ALIGN=\"LEFT\">");
+                try std.fmt.formatIntValue(entry.value_ptr.id, "d", options, writer);
+                try writer.writeAll(" -- ");
+                try writer.writeAll(entry.value_ptr.name);
+                try writer.writeAll("</TD>");
+                try writer.writeAll("</TR>\n");
+            }
+
+            try writer.writeAll("</TABLE>\n");
+            try writer.writeAll(">]\n");
         }
 
         try writer.writeAll("}\n");
@@ -178,7 +208,11 @@ pub const Graph = struct {
     pub fn generate(graph: *@This(), gpa: std.mem.Allocator, Wit: type) !void {
         const exit_str = @typeName(Exit);
         const id: u32 = Adler32.hash(exit_str);
-        try graph.node_set.put(gpa, id, exit_str);
+        try graph.node_set.put(gpa, id, .{
+            .name = exit_str,
+            .id = graph.node_id_counter,
+        });
+        graph.node_id_counter += 1;
         dsp_generate(graph, gpa, Wit);
     }
 
@@ -187,7 +221,11 @@ pub const Graph = struct {
         const from_str = @typeName(Current);
         const id: u32 = Adler32.hash(from_str);
         if (graph.node_set.get(id)) |_| {} else {
-            graph.node_set.put(gpa, id, from_str) catch unreachable;
+            graph.node_set.put(gpa, id, .{
+                .name = from_str,
+                .id = graph.node_id_counter,
+            }) catch unreachable;
+            graph.node_id_counter += 1;
             switch (@typeInfo(Current)) {
                 .@"union" => |un| {
                     inline for (un.fields) |field| {
