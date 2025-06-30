@@ -8,14 +8,14 @@ pub const Exit = union(enum) {};
 // FSMState  : type           , Example(A), Example(B)
 
 pub fn FSM(
-    comptime id: usize,
+    comptime name: []const u8,
     context: type,
     enter_fn: ?fn (*context, type) void,
     state: type,
 ) type {
     if (state == Exit) {
         return struct {
-            pub const ID = id;
+            pub const Name = name;
             pub const Context = context;
             pub const EnterFn = enter_fn;
             pub const State = state;
@@ -28,7 +28,7 @@ pub fn FSM(
         };
     } else {
         return struct {
-            pub const ID = id;
+            pub const Name = name;
             pub const Context = context;
             pub const EnterFn = enter_fn;
             pub const State = state;
@@ -39,7 +39,7 @@ pub fn FSM(
                     inline else => |wit, tag| {
                         _ = tag;
                         const FSMState = @TypeOf(wit);
-                        CheckConsistency(FSMState.ID, ID);
+                        checkConsistency(FSMState.Name, Name);
                         @call(.auto, FSMState.handler, .{ctx});
                     },
                 }
@@ -51,7 +51,7 @@ pub fn FSM(
                     inline else => |wit, tag| {
                         _ = tag;
                         const FSMState = @TypeOf(wit);
-                        CheckConsistency(FSMState.ID, ID);
+                        checkConsistency(FSMState.Name, Name);
                         @call(.always_tail, FSMState.handler, .{ctx});
                     },
                 }
@@ -67,7 +67,7 @@ pub fn FSM(
                             inline else => |wit, tag| {
                                 _ = tag;
                                 const FSMState = @TypeOf(wit);
-                                CheckConsistency(FSMState.ID, ID);
+                                checkConsistency(FSMState.Name, Name);
                                 return .{ .next = FSMState.conthandler };
                             },
                         }
@@ -77,7 +77,7 @@ pub fn FSM(
                             inline else => |wit, tag| {
                                 _ = tag;
                                 const FSMState = @TypeOf(wit);
-                                CheckConsistency(FSMState.ID, ID);
+                                checkConsistency(FSMState.Name, Name);
                                 return .{ .current = FSMState.conthandler };
                             },
                         }
@@ -88,11 +88,11 @@ pub fn FSM(
     }
 }
 
-fn CheckConsistency(comptime b: usize, comptime a: usize) void {
-    if (b != a) {
+fn checkConsistency(comptime b: []const u8, comptime a: []const u8) void {
+    if (comptime !std.mem.eql(u8, b, a)) {
         const error_str = std.fmt.comptimePrint(
-            \\The state machine IDs are inconsistent.
-            \\You used the state of state machine {d} in state machine {d}."
+            \\The state machine name are inconsistent.
+            \\You used the state of state machine [{s}] in state machine [{s}]."
         , .{ b, a });
         @compileError(error_str);
     }
@@ -118,6 +118,7 @@ pub fn NextState(state: type) type {
 }
 
 pub const Graph = struct {
+    name: []const u8,
     node_set: std.AutoArrayHashMapUnmanaged(u32, Node),
     edge_array_list: std.ArrayListUnmanaged(Edge),
     node_id_counter: u32 = 0,
@@ -135,7 +136,7 @@ pub const Graph = struct {
 
     const Self = @This();
 
-    pub const init: Self = .{ .node_set = .empty, .edge_array_list = .empty };
+    pub const init: Self = .{ .name = "", .node_set = .empty, .edge_array_list = .empty };
 
     pub fn format(
         val: @This(),
@@ -143,10 +144,21 @@ pub const Graph = struct {
         options: std.fmt.FormatOptions,
         writer: anytype,
     ) !void {
-        try writer.writeAll("digraph G {\n");
+        try writer.writeAll("digraph fsm_state_graph {\n");
 
         { //state graph
-            try writer.writeAll("subgraph cluster_A {\n");
+            try writer.writeAll("subgraph cluster_");
+            try writer.writeAll(val.name);
+            try writer.writeAll(" {\n");
+
+            try writer.writeAll("label = \"");
+            try writer.writeAll(val.name);
+            try writer.writeAll(
+                \\_state_graph";
+                \\ labelloc = "t";
+                \\ labeljust = "c";
+                \\
+            );
 
             var node_set_iter = val.node_set.iterator();
             while (node_set_iter.next()) |entry| {
@@ -167,9 +179,20 @@ pub const Graph = struct {
             try writer.writeAll("}\n");
         }
 
-        { //all_node
+        { //all_state
 
-            try writer.writeAll("subgraph cluster_B {\n");
+            try writer.writeAll("subgraph cluster_");
+            try writer.writeAll(val.name);
+            try writer.writeAll("_state {\n");
+
+            try writer.writeAll("label = \"");
+            try writer.writeAll(val.name);
+            try writer.writeAll(
+                \\_state";
+                \\ labelloc = "t";
+                \\ labeljust = "c";
+                \\
+            );
 
             try writer.writeAll("all_node [shape=plaintext, label=<\n");
             try writer.writeAll("<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n");
@@ -200,45 +223,42 @@ pub const Graph = struct {
         self.edge_array_list.deinit(gpa);
     }
 
+    fn make_hash(
+        ty: type, //FSMState
+    ) u32 {
+        return Adler32.hash(ty.Name ++ "-" ++ @typeName(ty.State));
+    }
+
     pub fn insert_edge(
         graph: *@This(),
         gpa: std.mem.Allocator,
-        from: type,
-        to: type,
+        from: type, //FSMState
+        to: type, //FSMState
         label: []const u8,
     ) !void {
-        const from_id: u32 = Adler32.hash(@typeName(from));
-        const to_id: u32 = Adler32.hash(@typeName(to));
+        const from_id: u32 = make_hash(from);
+        const to_id: u32 = make_hash(to);
         try graph.edge_array_list.append(gpa, .{ .from = from_id, .to = to_id, .label = label });
     }
-
-    pub fn generate(graph: *@This(), gpa: std.mem.Allocator, Wit: type) !void {
-        const exit_str = @typeName(Exit);
-        const id: u32 = Adler32.hash(exit_str);
-        try graph.node_set.put(gpa, id, .{
-            .name = exit_str,
-            .id = graph.node_id_counter,
-        });
-        graph.node_id_counter += 1;
+    pub fn generate(graph: *@This(), gpa: std.mem.Allocator, Wit: type) void {
+        graph.name = Wit.Name;
         dsp_generate(graph, gpa, Wit);
     }
 
     fn dsp_generate(graph: *@This(), gpa: std.mem.Allocator, Wit: type) void {
-        const Current = Wit.State;
-        const from_str = @typeName(Current);
-        const id: u32 = Adler32.hash(from_str);
+        const id: u32 = make_hash(Wit);
         if (graph.node_set.get(id)) |_| {} else {
             graph.node_set.put(gpa, id, .{
-                .name = from_str,
+                .name = @typeName(Wit.State),
                 .id = graph.node_id_counter,
             }) catch unreachable;
             graph.node_id_counter += 1;
-            switch (@typeInfo(Current)) {
+            switch (@typeInfo(Wit.State)) {
                 .@"union" => |un| {
                     inline for (un.fields) |field| {
                         const edge_label = field.name;
                         const NextWit = field.type;
-                        graph.insert_edge(gpa, Current, NextWit.State, edge_label) catch unreachable;
+                        graph.insert_edge(gpa, Wit, NextWit, edge_label) catch unreachable;
                         dsp_generate(graph, gpa, NextWit);
                     }
                 },
