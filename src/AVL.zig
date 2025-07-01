@@ -256,22 +256,42 @@ fn inOrder(self: *Self, root: i32) void {
 }
 
 test "avl" {
-    var avl: @This() = .{};
+    var prng = std.Random.DefaultPrng.init(blk: {
+        var seed: u64 = undefined;
+        try std.posix.getrandom(std.mem.asBytes(&seed));
+        break :blk seed;
+    });
+    const rand = prng.random();
 
-    var root: i32 = -1;
-    root = avl.insert(root, 2, 102);
-    root = avl.insert(root, 1, 101);
-    root = avl.insert(root, 5, 105);
-    root = avl.insert(root, 6, 106);
-    root = avl.insert(root, 3, 103);
-    root = avl.insert(root, 4, 104);
+    const len_arr: []const usize = &.{ 0, 1, 2, 3, 4, 6, 8, 10, 200, 450, 780, 1000, 4000, 8000, 10000, 30000 };
 
-    std.debug.assert(avl.search(root, 1) == 101);
-    std.debug.assert(avl.search(root, 2) == 102);
-    std.debug.assert(avl.search(root, 3) == 103);
-    std.debug.assert(avl.search(root, 4) == 104);
-    std.debug.assert(avl.search(root, 5) == 105);
-    std.debug.assert(avl.search(root, 6) == 106);
+    inline for (len_arr) |len| {
+        var tmp_arr: [len]struct { u32, u32 } = undefined;
+        for (0..len) |i| {
+            tmp_arr[i] = .{ @as(u32, @intCast(i)), @as(u32, @intCast(i)) };
+        }
+
+        for (0..len) |_| {
+            const id_a: usize = @intCast(rand.intRangeAtMost(u32, 0, len - 1));
+            const id_b: usize = @intCast(rand.intRangeAtMost(u32, 0, len - 1));
+            const tmp = tmp_arr[id_a];
+            tmp_arr[id_a] = tmp_arr[id_b];
+            tmp_arr[id_b] = tmp;
+        }
+
+        var root: i32 = -1;
+        var avl: @This() = .{};
+
+        for (0..len) |i| {
+            const tmp = tmp_arr[i];
+            root = avl.insert(root, tmp.@"0", tmp.@"1");
+        }
+
+        for (0..len) |i| {
+            const key: u32 = @intCast(i);
+            std.debug.assert(key == avl.search(root, key));
+        }
+    }
 }
 
 const std = @import("std");
