@@ -11,6 +11,7 @@ pub const Exit = union(enum) {};
 pub fn FSM(
     comptime name: []const u8,
     context: type,
+    // enter_fn args type is State
     enter_fn: ?fn (*context, type) void,
     state: type,
 ) type {
@@ -80,6 +81,7 @@ pub fn NextState(state: type) type {
 pub fn Runner(max_len: usize, is_inline: bool, fsm_state: type) type {
     const Context = fsm_state.Context;
     const fsm_state_map = collect_fsm_state(max_len, fsm_state);
+    const enter_fn = fsm_state.EnterFn;
 
     return struct {
         pub const StateId = std.math.IntFittingRange(0, fsm_state_map.avl.len);
@@ -100,6 +102,7 @@ pub fn Runner(max_len: usize, is_inline: bool, fsm_state: type) type {
                 inline 0...fsm_state_map.avl.len - 1 => |idx| {
                     const State = fsm_state_map.avl.nodes[idx].data.@"0".State;
                     if (State == Exit) return;
+                    if (enter_fn) |fun| fun(ctx, State);
                     const handler = State.handler;
                     const handle_res =
                         if (is_inline) @call(.always_inline, handler, .{ctx}) else handler(ctx);
@@ -120,6 +123,7 @@ pub fn Runner(max_len: usize, is_inline: bool, fsm_state: type) type {
                 inline 0...fsm_state_map.avl.len - 1 => |idx| {
                     const State = fsm_state_map.avl.nodes[idx].data.@"0".State;
                     if (State == Exit) return null;
+                    if (enter_fn) |fun| fun(ctx, State);
                     const conthandler = State.conthandler;
                     const cont_handle_res =
                         if (is_inline) @call(.always_inline, conthandler, .{ctx}) else conthandler(ctx);
