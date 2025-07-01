@@ -1,12 +1,12 @@
 const std = @import("std");
 const Adler32 = std.hash.Adler32;
-const AVL = @import("AVL.zig");
+const AVL = @import("avl.zig").AVL;
 
 pub const Exit = union(enum) {};
 
 // FSM       : fn (type) type , Example
 // State     : type           , A, B
-// FSMState  : type           , Example(A), Example(B)
+// FsmState  : type           , Example(A), Example(B)
 
 pub fn FSM(
     comptime name: []const u8,
@@ -22,39 +22,50 @@ pub fn FSM(
     };
 }
 
-fn checkConsistency(comptime b: []const u8, comptime a: []const u8) void {
-    if (comptime !std.mem.eql(u8, b, a)) {
-        const error_str = std.fmt.comptimePrint(
-            \\The state machine name are inconsistent.
-            \\You used the state of state machine [{s}] in state machine [{s}]."
-        , .{ b, a });
-        @compileError(error_str);
-    }
-}
+pub fn FsmStateMap(max_len: usize) type {
+    return struct {
+        root: i32 = -1,
+        avl: AVL(max_len, struct { type, usize }) = .{},
 
-pub fn run_handler(fsm_state: type, ctx: *fsm_state.Context) void {
-    const Name = fsm_state.Name;
-    const State = fsm_state.State;
+        fn checkConsistency(comptime b: []const u8, comptime a: []const u8) void {
+            if (comptime !std.mem.eql(u8, b, a)) {
+                const error_str = std.fmt.comptimePrint(
+                    \\The state machine name are inconsistent.
+                    \\You used the state of state machine [{s}] in state machine [{s}]."
+                , .{ b, a });
+                @compileError(error_str);
+            }
+        }
 
-    if (State == Exit) return;
-    switch (State.handler(ctx)) {
-        inline else => |wit, tag| {
-            _ = tag;
-            const FSMState = @TypeOf(wit);
-            checkConsistency(FSMState.Name, Name);
-            run_handler(FSMState, ctx);
-            // continue :sw @call(.always_tail, FSMState.State.handler, .{ctx});
-        },
-    }
-}
-
-pub fn ContResult(context: type) type {
-    const Context = context;
-    return union(enum) {
-        exit: void,
-        no_trasition: *const fn (*Context) ContResult(Context),
-        next: *const fn (*Context) ContResult(Context),
+        pub fn collect(self: *@This(), fsm_state: type) void {
+            const fsm_state_hash = Adler32.hash(@typeName(fsm_state));
+            const Name = fsm_state.Name;
+            if (self.avl.search(self.root, fsm_state_hash)) |_| {
+                return;
+            } else {
+                const idx = self.avl.len;
+                self.root = self.avl.insert(self.root, fsm_state_hash, .{ fsm_state, idx });
+                switch (@typeInfo(fsm_state.State)) {
+                    .@"union" => |un| {
+                        inline for (un.fields) |field| {
+                            const next_fsm_state = field.type;
+                            const NewName = next_fsm_state.Name;
+                            checkConsistency(NewName, Name);
+                            self.collect(next_fsm_state);
+                        }
+                    },
+                    else => @compileError("Only support tagged union!"),
+                }
+            }
+        }
     };
+}
+
+pub fn collect_fsm_state(max_len: usize, fsm_state: type) FsmStateMap(max_len) {
+    @setEvalBranchQuota(10_000_000);
+    var fsmap: FsmStateMap(max_len) = .{};
+    fsmap.collect(fsm_state);
+    return fsmap;
 }
 
 pub fn NextState(state: type) type {
@@ -66,47 +77,78 @@ pub fn NextState(state: type) type {
     };
 }
 
-pub fn run_conthandler(fsm_state: type) fn (*fsm_state.Context) ContResult(fsm_state.Context) {
-    const tmp = struct {
-        pub fn fun(ctx: *fsm_state.Context) ContResult(fsm_state.Context) {
-            return run_conthandler_inner(fsm_state, ctx);
+pub fn Runner(max_len: usize, is_inline: bool, fsm_state: type) type {
+    const Context = fsm_state.Context;
+    const fsm_state_map = collect_fsm_state(max_len, fsm_state);
+
+    return struct {
+        pub const StateId = std.math.IntFittingRange(0, fsm_state_map.avl.len);
+
+        pub fn fsm_state_to_state_id(FsmState: type) StateId {
+            const key = comptime Adler32.hash(@typeName(FsmState));
+            if (fsm_state_map.avl.search(fsm_state_map.root, key)) |mdata| {
+                const id: StateId = @intCast(mdata.@"1");
+                return id;
+            } else {
+                const str = std.fmt.comptimePrint("Can't find type {s}", .{@typeName(FsmState)});
+                @compileError(str);
+            }
+        }
+
+        pub fn run_handler(curr_id: StateId, ctx: *Context) void {
+            sw: switch (curr_id) {
+                inline 0...fsm_state_map.avl.len - 1 => |idx| {
+                    const State = fsm_state_map.avl.nodes[idx].data.@"0".State;
+                    if (State == Exit) return;
+                    const handler = State.handler;
+                    const handle_res =
+                        if (is_inline) @call(.always_inline, handler, .{ctx}) else handler(ctx);
+                    switch (handle_res) {
+                        inline else => |new_fsm_state_wit, tag| {
+                            _ = tag;
+                            const new_idx = fsm_state_to_state_id(@TypeOf(new_fsm_state_wit));
+                            continue :sw @as(StateId, @intCast(new_idx));
+                        },
+                    }
+                },
+                else => unreachable,
+            }
+        }
+
+        pub fn run_conthandler(curr_id: StateId, ctx: *Context) ?StateId {
+            sw: switch (curr_id) {
+                inline 0...fsm_state_map.avl.len - 1 => |idx| {
+                    const State = fsm_state_map.avl.nodes[idx].data.@"0".State;
+                    if (State == Exit) return null;
+                    const conthandler = State.conthandler;
+                    const cont_handle_res =
+                        if (is_inline) @call(.always_inline, conthandler, .{ctx}) else conthandler(ctx);
+                    switch (cont_handle_res) {
+                        inline .no_trasition => return idx,
+                        inline .next => |wit0| {
+                            switch (wit0) {
+                                inline else => |new_fsm_state_wit, tag| {
+                                    _ = tag;
+                                    const new_idx = fsm_state_to_state_id(@TypeOf(new_fsm_state_wit));
+                                    return @as(StateId, @intCast(new_idx));
+                                },
+                            }
+                        },
+                        inline .current => |wit0| {
+                            switch (wit0) {
+                                inline else => |new_fsm_state_wit, tag| {
+                                    _ = tag;
+                                    const new_idx = fsm_state_to_state_id(@TypeOf(new_fsm_state_wit));
+                                    continue :sw @as(StateId, @intCast(new_idx));
+                                },
+                            }
+                        },
+                    }
+                },
+                else => unreachable,
+            }
         }
     };
-    return tmp.fun;
-}
-
-pub fn run_conthandler_inner(fsm_state: type, ctx: *fsm_state.Context) ContResult(fsm_state.Context) {
-    const Context = fsm_state.Context;
-    const State = fsm_state.State;
-    const Name = fsm_state.Name;
-
-    if (fsm_state.State == Exit) return .exit;
-    if (fsm_state.EnterFn) |fun| fun(ctx, State);
-    const contFun: fn (*Context) NextState(State) = State.conthandler;
-    switch (contFun(ctx)) {
-        inline .no_trasition => return .{ .no_trasition = run_conthandler(fsm_state) },
-        inline .next => |wit0| {
-            switch (wit0) {
-                inline else => |wit, tag| {
-                    _ = tag;
-                    const FSMState = @TypeOf(wit);
-                    checkConsistency(FSMState.Name, Name);
-                    if (FSMState.State == Exit) return .exit;
-                    return .{ .next = run_conthandler(FSMState) };
-                },
-            }
-        },
-        inline .current => |wit0| {
-            switch (wit0) {
-                inline else => |wit, tag| {
-                    _ = tag;
-                    const FSMState = @TypeOf(wit);
-                    checkConsistency(FSMState.Name, Name);
-                    return run_conthandler_inner(FSMState, ctx);
-                },
-            }
-        },
-    }
 }
 
 pub const Graph = struct {
@@ -216,7 +258,7 @@ pub const Graph = struct {
     }
 
     fn make_hash(
-        ty: type, //FSMState
+        ty: type, //FsmState
     ) u32 {
         return Adler32.hash(ty.Name ++ "-" ++ @typeName(ty.State));
     }
@@ -224,8 +266,8 @@ pub const Graph = struct {
     pub fn insert_edge(
         graph: *@This(),
         gpa: std.mem.Allocator,
-        from: type, //FSMState
-        to: type, //FSMState
+        from: type, //FsmState
+        to: type, //FsmState
         label: []const u8,
     ) !void {
         const from_id: u32 = make_hash(from);
@@ -259,81 +301,3 @@ pub const Graph = struct {
         }
     }
 };
-
-pub const FSMStateCollect = struct {
-    id: usize = 0,
-    root: i32 = -1,
-    avl: AVL = .{},
-    fsm_states: [100_000]type = @splat(void),
-
-    const Self = @This();
-
-    pub fn collect_all(self: *Self, fsm_state: type) void {
-        if (self.avl.search(self.root, Adler32.hash(@typeName(fsm_state)))) |_| {
-            return;
-        } else {
-            self.fsm_states[self.id] = fsm_state;
-            self.root = self.avl.insert(self.root, Adler32.hash(@typeName(fsm_state)), self.id);
-            self.id += 1;
-
-            switch (@typeInfo(fsm_state.State)) {
-                .@"union" => |un| {
-                    inline for (un.fields) |field| {
-                        const next_fsm_state = field.type;
-                        self.collect_all(next_fsm_state);
-                    }
-                },
-                else => @compileError("Only support tagged union!"),
-            }
-        }
-    }
-};
-
-pub fn collect_all(fsm_state: type) FSMStateCollect {
-    @setEvalBranchQuota(10_000_000);
-    var fsm_state_collect: FSMStateCollect = .{};
-    fsm_state_collect.collect_all(fsm_state);
-    return fsm_state_collect;
-}
-
-pub fn Runner(fsm_state: type) type {
-    const Context = fsm_state.Context;
-    const fsm_state_collect = collect_all(fsm_state);
-
-    return struct {
-        pub const StateId = std.math.IntFittingRange(0, fsm_state_collect.id);
-
-        pub fn run_conthandler(curr_id: StateId, ctx: *Context) ?StateId {
-            sw: switch (curr_id) {
-                inline 0...fsm_state_collect.id - 1 => |state_id| {
-                    const State = fsm_state_collect.fsm_states[state_id].State;
-                    if (State == Exit) return null;
-                    const conthandler = State.conthandler;
-                    switch (conthandler(ctx)) {
-                        inline .no_trasition => return curr_id,
-                        inline .next => |wit0| {
-                            switch (wit0) {
-                                inline else => |wit, tag| {
-                                    _ = tag;
-                                    const key = Adler32.hash(@typeName(@TypeOf(wit)));
-                                    const new_id = fsm_state_collect.avl.search(fsm_state_collect.root, key).?;
-                                    return @as(StateId, @intCast(new_id));
-                                },
-                            }
-                        },
-                        inline .current => |wit0| {
-                            switch (wit0) {
-                                inline else => |wit, tag| {
-                                    _ = tag;
-                                    const key = Adler32.hash(@typeName(@TypeOf(wit)));
-                                    const new_id = fsm_state_collect.avl.search(fsm_state_collect.root, key).?;
-                                    continue :sw @as(StateId, @intCast(new_id));
-                                },
-                            }
-                        },
-                    }
-                },
-            }
-        }
-    };
-}

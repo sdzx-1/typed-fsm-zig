@@ -11,16 +11,16 @@ pub fn Node(ty: type) type {
         height: i32,
     };
 }
-pub fn AVL(comptime len: usize, ty: type) type {
+pub fn AVL(comptime max_len: usize, ty: type) type {
     return struct {
-        idx: i32 = 0,
-        nodes: [len]Node(ty) = undefined,
+        len: i32 = 0,
+        nodes: [max_len]Node(ty) = undefined,
 
         const Self = @This();
 
-        pub fn search(self: *Self, root: i32, key: u32) ?ty {
+        pub fn search(self: *const Self, root: i32, key: u32) ?ty {
             if (root == -1) return null;
-            const node = self.access(root);
+            const node = self.nodes[@as(usize, @intCast(root))];
             if (key == node.key) return node.data;
             if (key < node.key) return self.search(node.left, key);
             if (key > node.key) return self.search(node.right, key);
@@ -96,8 +96,9 @@ pub fn AVL(comptime len: usize, ty: type) type {
         //     node->height = 1; // New node is initially added at leaf
 
         fn createNode(self: *Self, key: u32, data: ty) i32 {
-            const curr = self.idx;
-            self.idx += 1;
+            const curr = self.len;
+            if (curr >= self.nodes.len) unreachable; //The used state exceeds the estimated maximum. You should increase the value of max_len
+            self.len += 1;
             self.access(curr).* = .{ .key = key, .data = data, .left = -1, .right = -1, .height = 1 };
             return curr;
         }
