@@ -8,25 +8,42 @@ pub const Exit = union(enum) {};
 // State     : type           , A, B
 // FsmState  : type           , Example(A), Example(B)
 
+pub const Mode = enum {
+    no_suspendable,
+    suspendable,
+};
+
+pub const Method = enum {
+    next,
+    current,
+};
+
+// FsmState(State)
+// Transition
+
 pub fn FSM(
     comptime name: []const u8,
+    mode: Mode,
     context: type,
     // enter_fn args type is State
     enter_fn: ?fn (*context, type) void,
+    transition_method: if (mode == .no_suspendable) void else Method,
     state: type,
 ) type {
     return struct {
         pub const Name = name;
+        pub const Mode = mode;
         pub const Context = context;
         pub const EnterFn = enter_fn;
+        pub const TransitionMethod = transition_method;
         pub const State = state;
     };
 }
 
-pub fn FsmStateMap(max_len: usize) type {
+pub fn StateMap(max_len: usize) type {
     return struct {
         root: i32 = -1,
-        avl: AVL(max_len, struct { type, usize }) = .{},
+        avl: AVL(max_len, struct { type, usize }) = .{}, // the type is State
 
         fn checkConsistency(comptime b: []const u8, comptime a: []const u8) void {
             if (comptime !std.mem.eql(u8, b, a)) {
@@ -39,17 +56,21 @@ pub fn FsmStateMap(max_len: usize) type {
         }
 
         pub fn collect(self: *@This(), fsm_state: type) void {
-            const fsm_state_hash = Adler32.hash(@typeName(fsm_state));
+            const State = fsm_state.State;
+            const state_hash = Adler32.hash(@typeName(State));
             const Name = fsm_state.Name;
-            if (self.avl.search(self.root, fsm_state_hash)) |_| {
+            if (self.avl.search(self.root, state_hash)) |_| {
                 return;
             } else {
                 const idx = self.avl.len;
-                self.root = self.avl.insert(self.root, fsm_state_hash, .{ fsm_state, idx });
-                switch (@typeInfo(fsm_state.State)) {
+                self.root = self.avl.insert(self.root, state_hash, .{ State, idx });
+                switch (@typeInfo(State)) {
                     .@"union" => |un| {
                         inline for (un.fields) |field| {
                             const next_fsm_state = field.type;
+                            if (fsm_state.Mode != next_fsm_state.Mode) {
+                                @compileError("The Modes of the two fsm_states are inconsistent!");
+                            }
                             const NewName = next_fsm_state.Name;
                             checkConsistency(NewName, Name);
                             self.collect(next_fsm_state);
@@ -62,46 +83,47 @@ pub fn FsmStateMap(max_len: usize) type {
     };
 }
 
-pub fn collect_fsm_state(max_len: usize, fsm_state: type) FsmStateMap(max_len) {
+pub fn collect_state(max_len: usize, fsm_state: type) StateMap(max_len) {
     @setEvalBranchQuota(10_000_000);
-    var fsmap: FsmStateMap(max_len) = .{};
-    fsmap.collect(fsm_state);
-    return fsmap;
-}
-
-pub fn NextState(state: type) type {
-    const State = state;
-    return union(enum) {
-        no_trasition: void,
-        next: State,
-        current: State,
-    };
+    var state_map: StateMap(max_len) = .{};
+    state_map.collect(fsm_state);
+    return state_map;
 }
 
 pub fn Runner(max_len: usize, is_inline: bool, fsm_state: type) type {
     const Context = fsm_state.Context;
-    const fsm_state_map = collect_fsm_state(max_len, fsm_state);
     const enter_fn = fsm_state.EnterFn;
 
     return struct {
-        pub const StateId = std.math.IntFittingRange(0, fsm_state_map.avl.len);
+        pub const state_map = collect_state(max_len, fsm_state);
+        pub const StateId = std.math.IntFittingRange(0, state_map.avl.len);
+        const RetType = if (fsm_state.Mode == .no_suspendable) void else ?StateId;
 
-        pub fn fsm_state_to_state_id(FsmState: type) StateId {
-            const key = comptime Adler32.hash(@typeName(FsmState));
-            if (fsm_state_map.avl.search(fsm_state_map.root, key)) |mdata| {
+        pub fn state_to_id(State: type) StateId {
+            const key = comptime Adler32.hash(@typeName(State));
+            if (comptime state_map.avl.search(state_map.root, key)) |mdata| {
                 const id: StateId = @intCast(mdata.@"1");
                 return id;
             } else {
-                const str = std.fmt.comptimePrint("Can't find type {s}", .{@typeName(FsmState)});
-                @compileError(str);
+                @compileError(std.fmt.comptimePrint(
+                    "Can't find State {s}",
+                    .{@typeName(State)},
+                ));
             }
         }
 
-        pub fn run_handler(curr_id: StateId, ctx: *Context) void {
+        pub fn run_handler(curr_id: StateId, ctx: *Context) RetType {
+            @setEvalBranchQuota(10_000_000);
             sw: switch (curr_id) {
-                inline 0...fsm_state_map.avl.len - 1 => |idx| {
-                    const State = fsm_state_map.avl.nodes[idx].data.@"0".State;
-                    if (State == Exit) return;
+                inline 0...state_map.avl.len - 1 => |idx| {
+                    const State = comptime state_map.avl.nodes[idx].data.@"0";
+                    if (comptime State == Exit) {
+                        if (comptime fsm_state.Mode == .no_suspendable) {
+                            return;
+                        } else {
+                            return null;
+                        }
+                    }
                     if (enter_fn) |fun| fun(ctx, State);
                     const handler = State.handler;
                     const handle_res =
@@ -109,42 +131,15 @@ pub fn Runner(max_len: usize, is_inline: bool, fsm_state: type) type {
                     switch (handle_res) {
                         inline else => |new_fsm_state_wit, tag| {
                             _ = tag;
-                            const new_idx = fsm_state_to_state_id(@TypeOf(new_fsm_state_wit));
-                            continue :sw @as(StateId, @intCast(new_idx));
-                        },
-                    }
-                },
-                else => unreachable,
-            }
-        }
-
-        pub fn run_conthandler(curr_id: StateId, ctx: *Context) ?StateId {
-            sw: switch (curr_id) {
-                inline 0...fsm_state_map.avl.len - 1 => |idx| {
-                    const State = fsm_state_map.avl.nodes[idx].data.@"0".State;
-                    if (State == Exit) return null;
-                    if (enter_fn) |fun| fun(ctx, State);
-                    const conthandler = State.conthandler;
-                    const cont_handle_res =
-                        if (is_inline) @call(.always_inline, conthandler, .{ctx}) else conthandler(ctx);
-                    switch (cont_handle_res) {
-                        inline .no_trasition => return idx,
-                        inline .next => |wit0| {
-                            switch (wit0) {
-                                inline else => |new_fsm_state_wit, tag| {
-                                    _ = tag;
-                                    const new_idx = fsm_state_to_state_id(@TypeOf(new_fsm_state_wit));
-                                    return @as(StateId, @intCast(new_idx));
-                                },
-                            }
-                        },
-                        inline .current => |wit0| {
-                            switch (wit0) {
-                                inline else => |new_fsm_state_wit, tag| {
-                                    _ = tag;
-                                    const new_idx = fsm_state_to_state_id(@TypeOf(new_fsm_state_wit));
-                                    continue :sw @as(StateId, @intCast(new_idx));
-                                },
+                            const new_fsm_state = comptime @TypeOf(new_fsm_state_wit);
+                            const new_id = comptime state_to_id(new_fsm_state.State);
+                            if (comptime new_fsm_state.Mode == .no_suspendable) {
+                                continue :sw new_id;
+                            } else {
+                                switch (new_fsm_state.TransitionMethod) {
+                                    inline .next => return new_id,
+                                    inline .current => continue :sw new_id,
+                                }
                             }
                         },
                     }
@@ -157,6 +152,7 @@ pub fn Runner(max_len: usize, is_inline: bool, fsm_state: type) type {
 
 pub const Graph = struct {
     name: []const u8,
+    mode: Mode,
     node_set: std.AutoArrayHashMapUnmanaged(u32, Node),
     edge_array_list: std.ArrayListUnmanaged(Edge),
     node_id_counter: u32 = 0,
@@ -169,12 +165,18 @@ pub const Graph = struct {
     pub const Edge = struct {
         from: u32,
         to: u32,
+        method: ?Method,
         label: []const u8,
     };
 
     const Self = @This();
 
-    pub const init: Self = .{ .name = "", .node_set = .empty, .edge_array_list = .empty };
+    pub const init: Self = .{
+        .name = "",
+        .mode = .no_suspendable,
+        .node_set = .empty,
+        .edge_array_list = .empty,
+    };
 
     pub fn format(
         val: @This(),
@@ -211,7 +213,20 @@ pub const Graph = struct {
                 try std.fmt.formatIntValue(edge.to, "d", options, writer);
                 try writer.writeAll(" [label = \"");
                 try writer.writeAll(edge.label);
-                try writer.writeAll("\"];\n");
+                if (edge.method) |method| {
+                    switch (method) {
+                        .current => {
+                            try writer.writeAll("\"");
+                        },
+                        .next => {
+                            try writer.writeAll("\"  color=\"blue\" ");
+                        },
+                    }
+                } else {
+                    try writer.writeAll("\"");
+                }
+
+                try writer.writeAll("];\n");
             }
 
             try writer.writeAll("}\n");
@@ -262,9 +277,9 @@ pub const Graph = struct {
     }
 
     fn make_hash(
-        ty: type, //FsmState
+        ty: type, //State
     ) u32 {
-        return Adler32.hash(ty.Name ++ "-" ++ @typeName(ty.State));
+        return Adler32.hash(@typeName(ty));
     }
 
     pub fn insert_edge(
@@ -272,32 +287,44 @@ pub const Graph = struct {
         gpa: std.mem.Allocator,
         from: type, //FsmState
         to: type, //FsmState
+        method: ?Method,
         label: []const u8,
     ) !void {
         const from_id: u32 = make_hash(from);
         const to_id: u32 = make_hash(to);
-        try graph.edge_array_list.append(gpa, .{ .from = from_id, .to = to_id, .label = label });
+        try graph.edge_array_list.append(
+            gpa,
+            .{ .from = from_id, .to = to_id, .method = method, .label = label },
+        );
     }
-    pub fn generate(graph: *@This(), gpa: std.mem.Allocator, Wit: type) void {
-        graph.name = Wit.Name;
-        dsp_generate(graph, gpa, Wit);
+    pub fn generate(graph: *@This(), gpa: std.mem.Allocator, fsm_state: type) void {
+        graph.name = fsm_state.Name;
+        graph.mode = fsm_state.Mode;
+        dsp_generate(graph, gpa, fsm_state.State);
     }
 
-    fn dsp_generate(graph: *@This(), gpa: std.mem.Allocator, Wit: type) void {
-        const id: u32 = make_hash(Wit);
+    fn dsp_generate(graph: *@This(), gpa: std.mem.Allocator, state: type) void {
+        const id: u32 = make_hash(state);
         if (graph.node_set.get(id)) |_| {} else {
             graph.node_set.put(gpa, id, .{
-                .name = @typeName(Wit.State),
+                .name = @typeName(state),
                 .id = graph.node_id_counter,
             }) catch unreachable;
             graph.node_id_counter += 1;
-            switch (@typeInfo(Wit.State)) {
+            switch (@typeInfo(state)) {
                 .@"union" => |un| {
                     inline for (un.fields) |field| {
                         const edge_label = field.name;
-                        const NextWit = field.type;
-                        graph.insert_edge(gpa, Wit, NextWit, edge_label) catch unreachable;
-                        dsp_generate(graph, gpa, NextWit);
+                        const NextFsmState = field.type;
+                        const NextState = NextFsmState.State;
+                        const method_val = if (NextFsmState.Mode == .no_suspendable) null else NextFsmState.TransitionMethod;
+
+                        if (graph.mode == .no_suspendable) {
+                            graph.insert_edge(gpa, state, NextState, null, edge_label) catch unreachable;
+                        } else {
+                            graph.insert_edge(gpa, state, NextState, method_val, edge_label) catch unreachable;
+                        }
+                        dsp_generate(graph, gpa, NextState);
                     }
                 },
                 else => @compileError("Only support tagged union!"),
