@@ -35,7 +35,7 @@ pub fn FSM(
         pub const mode = mode_;
         pub const Context = Context_;
         pub const enter_fn = enter_fn_;
-        pub const transition_method = transition_method_;
+        pub const transition_method: Method = if (mode_ == .no_suspendable) .current else transition_method_;
         pub const State = State_;
     };
 }
@@ -134,15 +134,15 @@ pub fn StateMap(max_len: usize) type {
 }
 
 pub fn Runner(max_len: usize, is_inline: bool, FsmState: type) type {
-    const Context = FsmState.Context;
-    const enter_fn = FsmState.enter_fn;
-
     return struct {
+        pub const Context = FsmState.Context;
         pub const state_map: StateMap(max_len) = .init(FsmState);
-
         pub const StateId = state_map.StateId;
-
-        pub const RetType = if (FsmState.mode == .no_suspendable) void else ?StateId;
+        pub const RetType =
+            switch (FsmState.mode) {
+                .suspendable => ?StateId,
+                .no_suspendable => void,
+            };
 
         pub fn idFromState(comptime State: type) StateId {
             return state_map.idFromState(State);
@@ -164,29 +164,29 @@ pub fn Runner(max_len: usize, is_inline: bool, FsmState: type) type {
                     }
 
                     const State = StateFromId(state_id);
-                    if (comptime State == Exit) {
-                        if (comptime FsmState.mode == .no_suspendable) {
-                            return;
-                        } else {
-                            return null;
-                        }
+
+                    if (State == Exit) {
+                        return switch (FsmState.mode) {
+                            .suspendable => null,
+                            .no_suspendable => {},
+                        };
                     }
-                    if (enter_fn) |fun| fun(ctx, State);
-                    const handler = State.handler;
-                    const handle_res =
-                        if (is_inline) @call(.always_inline, handler, .{ctx}) else handler(ctx);
+
+                    if (FsmState.enter_fn) |fun| fun(ctx, State);
+
+                    const handle_res = @call(
+                        if (is_inline) .always_inline else .auto,
+                        State.handler,
+                        .{ctx},
+                    );
                     switch (handle_res) {
-                        inline else => |new_fsm_state_wit, tag| {
-                            _ = tag;
-                            const new_fsm_state = comptime @TypeOf(new_fsm_state_wit);
-                            const new_id = comptime idFromState(new_fsm_state.State);
-                            if (comptime new_fsm_state.mode == .no_suspendable) {
-                                continue :sw new_id;
-                            } else {
-                                switch (new_fsm_state.transition_method) {
-                                    inline .next => return new_id,
-                                    inline .current => continue :sw new_id,
-                                }
+                        inline else => |new_fsm_state_wit| {
+                            const NewFsmState = @TypeOf(new_fsm_state_wit);
+                            const new_id = comptime idFromState(NewFsmState.State);
+
+                            switch (NewFsmState.transition_method) {
+                                .next => return new_id,
+                                .current => continue :sw new_id,
                             }
                         },
                     }
