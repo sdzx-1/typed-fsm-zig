@@ -44,6 +44,56 @@ pub fn StateMap(max_len: usize) type {
     return struct {
         root: i32 = -1,
         avl: AVL(max_len, struct { type, usize }) = .{}, // the type is State
+        StateId: type,
+
+        const Self = @This();
+
+        pub fn init(comptime FsmState: type) Self {
+            comptime {
+                var res: Self = .{
+                    .root = -1,
+                    .avl = .{},
+                    .StateId = undefined,
+                };
+
+                res.collect(FsmState);
+
+                const state_count = res.avl.len;
+
+                res.StateId = @Type(.{
+                    .@"enum" = .{
+                        .tag_type = std.math.IntFittingRange(0, state_count - 1),
+                        .fields = inner: {
+                            var fields: [state_count]std.builtin.Type.EnumField = undefined;
+
+                            for (&fields, res.avl.nodes[0..state_count]) |*field, node| {
+                                const State, const state_int = node.data;
+
+                                field.* = .{
+                                    .name = @typeName(State),
+                                    .value = state_int,
+                                };
+                            }
+
+                            const fields_const = fields;
+                            break :inner &fields_const;
+                        },
+                        .decls = &.{},
+                        .is_exhaustive = true,
+                    },
+                });
+
+                return res;
+            }
+        }
+
+        pub fn StateFromId(comptime self: *const Self, state_id: self.StateId) type {
+            return self.avl.nodes[@intFromEnum(state_id)].data[0];
+        }
+
+        pub fn idFromState(comptime self: *const Self, State: type) self.StateId {
+            return @field(self.StateId, @typeName(State));
+        }
 
         fn checkConsistency(comptime b: []const u8, comptime a: []const u8) void {
             if (comptime !std.mem.eql(u8, b, a)) {
@@ -55,7 +105,7 @@ pub fn StateMap(max_len: usize) type {
             }
         }
 
-        pub fn collect(self: *@This(), FsmState: type) void {
+        fn collect(self: *Self, FsmState: type) void {
             const State = FsmState.State;
             const state_hash = Adler32.hash(@typeName(State));
             const name = FsmState.name;
@@ -83,46 +133,37 @@ pub fn StateMap(max_len: usize) type {
     };
 }
 
-pub fn collectState(max_len: usize, FsmState: type) StateMap(max_len) {
-    @setEvalBranchQuota(10_000_000);
-    var state_map: StateMap(max_len) = .{};
-    state_map.collect(FsmState);
-    return state_map;
-}
-
 pub fn Runner(max_len: usize, is_inline: bool, FsmState: type) type {
     const Context = FsmState.Context;
     const enter_fn = FsmState.enter_fn;
 
     return struct {
-        pub const state_map = collectState(max_len, FsmState);
-        pub const StateId = std.math.IntFittingRange(0, state_map.avl.len);
-        const RetType = if (FsmState.mode == .no_suspendable) void else ?StateId;
+        pub const state_map: StateMap(max_len) = .init(FsmState);
 
-        pub fn stateToId(State: type) StateId {
-            const key = comptime Adler32.hash(@typeName(State));
-            if (comptime state_map.avl.search(state_map.root, key)) |mdata| {
-                const id: StateId = @intCast(mdata.@"1");
-                return id;
-            } else {
-                @compileError(std.fmt.comptimePrint(
-                    "Can't find State {s}",
-                    .{@typeName(State)},
-                ));
-            }
+        pub const StateId = state_map.StateId;
+
+        pub const RetType = if (FsmState.mode == .no_suspendable) void else ?StateId;
+
+        pub fn idFromState(comptime State: type) StateId {
+            return state_map.idFromState(State);
+        }
+
+        pub fn StateFromId(comptime state_id: StateId) type {
+            return state_map.StateFromId(state_id);
         }
 
         pub fn runHandler(curr_id: StateId, ctx: *Context) RetType {
             @setEvalBranchQuota(10_000_000);
             sw: switch (curr_id) {
-                inline 0...state_map.avl.len - 1 => |idx| {
+                inline else => |state_id| {
                     // Remove when https://github.com/ziglang/zig/issues/24323 is fixed:
                     {
                         var runtime_false = false;
                         _ = &runtime_false;
-                        if (runtime_false) continue :sw 0;
+                        if (runtime_false) continue :sw @enumFromInt(0);
                     }
-                    const State = comptime state_map.avl.nodes[idx].data.@"0";
+
+                    const State = StateFromId(state_id);
                     if (comptime State == Exit) {
                         if (comptime FsmState.mode == .no_suspendable) {
                             return;
@@ -138,7 +179,7 @@ pub fn Runner(max_len: usize, is_inline: bool, FsmState: type) type {
                         inline else => |new_fsm_state_wit, tag| {
                             _ = tag;
                             const new_fsm_state = comptime @TypeOf(new_fsm_state_wit);
-                            const new_id = comptime stateToId(new_fsm_state.State);
+                            const new_id = comptime idFromState(new_fsm_state.State);
                             if (comptime new_fsm_state.mode == .no_suspendable) {
                                 continue :sw new_id;
                             } else {
@@ -150,7 +191,6 @@ pub fn Runner(max_len: usize, is_inline: bool, FsmState: type) type {
                         },
                     }
                 },
-                else => unreachable,
             }
         }
     };
