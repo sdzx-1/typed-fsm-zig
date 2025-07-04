@@ -23,12 +23,12 @@ pub const Method = enum {
 
 pub fn FSM(
     comptime name_: []const u8,
-    mode_: Mode,
-    Context_: type,
+    comptime mode_: Mode,
+    comptime Context_: type,
     // enter_fn args type is State
-    enter_fn_: ?fn (*Context_, type) void,
-    transition_method_: if (mode_ == .no_suspendable) void else Method,
-    State_: type,
+    comptime enter_fn_: ?fn (*Context_, type) void,
+    comptime transition_method_: if (mode_ == .no_suspendable) void else Method,
+    comptime State_: type,
 ) type {
     return struct {
         pub const name = name_;
@@ -40,7 +40,7 @@ pub fn FSM(
     };
 }
 
-pub fn StateMap(max_len: usize) type {
+pub fn StateMap(comptime max_len: usize) type {
     return struct {
         root: i32 = -1,
         avl: AVL(max_len, struct { type, usize }) = .{}, // the type is State
@@ -87,11 +87,11 @@ pub fn StateMap(max_len: usize) type {
             }
         }
 
-        pub fn StateFromId(comptime self: *const Self, state_id: self.StateId) type {
+        pub fn StateFromId(comptime self: *const Self, comptime state_id: self.StateId) type {
             return self.avl.nodes[@intFromEnum(state_id)].data[0];
         }
 
-        pub fn idFromState(comptime self: *const Self, State: type) self.StateId {
+        pub fn idFromState(comptime self: *const Self, comptime State: type) self.StateId {
             return @field(self.StateId, @typeName(State));
         }
 
@@ -105,7 +105,7 @@ pub fn StateMap(max_len: usize) type {
             }
         }
 
-        fn collect(self: *Self, FsmState: type) void {
+        fn collect(comptime self: *Self, comptime FsmState: type) void {
             const State = FsmState.State;
             const state_hash = Adler32.hash(@typeName(State));
             const name = FsmState.name;
@@ -133,7 +133,11 @@ pub fn StateMap(max_len: usize) type {
     };
 }
 
-pub fn Runner(max_len: usize, is_inline: bool, FsmState: type) type {
+pub fn Runner(
+    comptime max_len: usize,
+    comptime is_inline: bool,
+    comptime FsmState: type,
+) type {
     return struct {
         pub const Context = FsmState.Context;
         pub const state_map: StateMap(max_len) = .init(FsmState);
