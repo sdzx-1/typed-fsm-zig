@@ -116,6 +116,12 @@ pub fn Runner(max_len: usize, is_inline: bool, fsm_state: type) type {
             @setEvalBranchQuota(10_000_000);
             sw: switch (curr_id) {
                 inline 0...state_map.avl.len - 1 => |idx| {
+                    // Remove when https://github.com/ziglang/zig/issues/24323 is fixed:
+                    {
+                        var runtime_false = false;
+                        _ = &runtime_false;
+                        if (runtime_false) continue :sw 0;
+                    }
                     const State = comptime state_map.avl.nodes[idx].data.@"0";
                     if (comptime State == Exit) {
                         if (comptime fsm_state.Mode == .no_suspendable) {
