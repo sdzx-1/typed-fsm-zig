@@ -22,21 +22,21 @@ pub const Method = enum {
 // Transition
 
 pub fn FSM(
-    comptime name: []const u8,
-    mode: Mode,
-    context: type,
+    comptime name_: []const u8,
+    mode_: Mode,
+    Context_: type,
     // enter_fn args type is State
-    enter_fn: ?fn (*context, type) void,
-    transition_method: if (mode == .no_suspendable) void else Method,
-    state: type,
+    enter_fn_: ?fn (*Context_, type) void,
+    transition_method_: if (mode_ == .no_suspendable) void else Method,
+    State_: type,
 ) type {
     return struct {
-        pub const Name = name;
-        pub const Mode = mode;
-        pub const Context = context;
-        pub const EnterFn = enter_fn;
-        pub const TransitionMethod = transition_method;
-        pub const State = state;
+        pub const name = name_;
+        pub const mode = mode_;
+        pub const Context = Context_;
+        pub const enter_fn = enter_fn_;
+        pub const transition_method = transition_method_;
+        pub const State = State_;
     };
 }
 
@@ -55,10 +55,10 @@ pub fn StateMap(max_len: usize) type {
             }
         }
 
-        pub fn collect(self: *@This(), fsm_state: type) void {
-            const State = fsm_state.State;
+        pub fn collect(self: *@This(), FsmState: type) void {
+            const State = FsmState.State;
             const state_hash = Adler32.hash(@typeName(State));
-            const Name = fsm_state.Name;
+            const name = FsmState.name;
             if (self.avl.search(self.root, state_hash)) |_| {
                 return;
             } else {
@@ -67,13 +67,13 @@ pub fn StateMap(max_len: usize) type {
                 switch (@typeInfo(State)) {
                     .@"union" => |un| {
                         inline for (un.fields) |field| {
-                            const next_fsm_state = field.type;
-                            if (fsm_state.Mode != next_fsm_state.Mode) {
+                            const NextFsmState = field.type;
+                            if (FsmState.mode != NextFsmState.mode) {
                                 @compileError("The Modes of the two fsm_states are inconsistent!");
                             }
-                            const NewName = next_fsm_state.Name;
-                            checkConsistency(NewName, Name);
-                            self.collect(next_fsm_state);
+                            const new_name = NextFsmState.name;
+                            checkConsistency(new_name, name);
+                            self.collect(NextFsmState);
                         }
                     },
                     else => @compileError("Only support tagged union!"),
@@ -83,23 +83,23 @@ pub fn StateMap(max_len: usize) type {
     };
 }
 
-pub fn collect_state(max_len: usize, fsm_state: type) StateMap(max_len) {
+pub fn collectState(max_len: usize, FsmState: type) StateMap(max_len) {
     @setEvalBranchQuota(10_000_000);
     var state_map: StateMap(max_len) = .{};
-    state_map.collect(fsm_state);
+    state_map.collect(FsmState);
     return state_map;
 }
 
-pub fn Runner(max_len: usize, is_inline: bool, fsm_state: type) type {
-    const Context = fsm_state.Context;
-    const enter_fn = fsm_state.EnterFn;
+pub fn Runner(max_len: usize, is_inline: bool, FsmState: type) type {
+    const Context = FsmState.Context;
+    const enter_fn = FsmState.enter_fn;
 
     return struct {
-        pub const state_map = collect_state(max_len, fsm_state);
+        pub const state_map = collectState(max_len, FsmState);
         pub const StateId = std.math.IntFittingRange(0, state_map.avl.len);
-        const RetType = if (fsm_state.Mode == .no_suspendable) void else ?StateId;
+        const RetType = if (FsmState.mode == .no_suspendable) void else ?StateId;
 
-        pub fn state_to_id(State: type) StateId {
+        pub fn stateToId(State: type) StateId {
             const key = comptime Adler32.hash(@typeName(State));
             if (comptime state_map.avl.search(state_map.root, key)) |mdata| {
                 const id: StateId = @intCast(mdata.@"1");
@@ -112,7 +112,7 @@ pub fn Runner(max_len: usize, is_inline: bool, fsm_state: type) type {
             }
         }
 
-        pub fn run_handler(curr_id: StateId, ctx: *Context) RetType {
+        pub fn runHandler(curr_id: StateId, ctx: *Context) RetType {
             @setEvalBranchQuota(10_000_000);
             sw: switch (curr_id) {
                 inline 0...state_map.avl.len - 1 => |idx| {
@@ -124,7 +124,7 @@ pub fn Runner(max_len: usize, is_inline: bool, fsm_state: type) type {
                     }
                     const State = comptime state_map.avl.nodes[idx].data.@"0";
                     if (comptime State == Exit) {
-                        if (comptime fsm_state.Mode == .no_suspendable) {
+                        if (comptime FsmState.mode == .no_suspendable) {
                             return;
                         } else {
                             return null;
@@ -138,11 +138,11 @@ pub fn Runner(max_len: usize, is_inline: bool, fsm_state: type) type {
                         inline else => |new_fsm_state_wit, tag| {
                             _ = tag;
                             const new_fsm_state = comptime @TypeOf(new_fsm_state_wit);
-                            const new_id = comptime state_to_id(new_fsm_state.State);
-                            if (comptime new_fsm_state.Mode == .no_suspendable) {
+                            const new_id = comptime stateToId(new_fsm_state.State);
+                            if (comptime new_fsm_state.mode == .no_suspendable) {
                                 continue :sw new_id;
                             } else {
-                                switch (new_fsm_state.TransitionMethod) {
+                                switch (new_fsm_state.transition_method) {
                                     inline .next => return new_id,
                                     inline .current => continue :sw new_id,
                                 }
@@ -282,55 +282,55 @@ pub const Graph = struct {
         self.edge_array_list.deinit(gpa);
     }
 
-    fn make_hash(
-        ty: type, //State
+    fn makeHash(
+        Ty: type, //State
     ) u32 {
-        return Adler32.hash(@typeName(ty));
+        return Adler32.hash(@typeName(Ty));
     }
 
-    pub fn insert_edge(
+    pub fn insertEdge(
         graph: *@This(),
         gpa: std.mem.Allocator,
-        from: type, //FsmState
-        to: type, //FsmState
+        From: type, //FsmState
+        To: type, //FsmState
         method: ?Method,
         label: []const u8,
     ) !void {
-        const from_id: u32 = make_hash(from);
-        const to_id: u32 = make_hash(to);
+        const from_id: u32 = makeHash(From);
+        const to_id: u32 = makeHash(To);
         try graph.edge_array_list.append(
             gpa,
             .{ .from = from_id, .to = to_id, .method = method, .label = label },
         );
     }
-    pub fn generate(graph: *@This(), gpa: std.mem.Allocator, fsm_state: type) void {
-        graph.name = fsm_state.Name;
-        graph.mode = fsm_state.Mode;
-        dsp_generate(graph, gpa, fsm_state.State);
+    pub fn generate(graph: *@This(), gpa: std.mem.Allocator, FsmState: type) void {
+        graph.name = FsmState.name;
+        graph.mode = FsmState.mode;
+        dspGenerate(graph, gpa, FsmState.State);
     }
 
-    fn dsp_generate(graph: *@This(), gpa: std.mem.Allocator, state: type) void {
-        const id: u32 = make_hash(state);
+    fn dspGenerate(graph: *@This(), gpa: std.mem.Allocator, State: type) void {
+        const id: u32 = makeHash(State);
         if (graph.node_set.get(id)) |_| {} else {
             graph.node_set.put(gpa, id, .{
-                .name = @typeName(state),
+                .name = @typeName(State),
                 .id = graph.node_id_counter,
             }) catch unreachable;
             graph.node_id_counter += 1;
-            switch (@typeInfo(state)) {
+            switch (@typeInfo(State)) {
                 .@"union" => |un| {
                     inline for (un.fields) |field| {
                         const edge_label = field.name;
                         const NextFsmState = field.type;
                         const NextState = NextFsmState.State;
-                        const method_val = if (NextFsmState.Mode == .no_suspendable) null else NextFsmState.TransitionMethod;
+                        const method_val = if (NextFsmState.mode == .no_suspendable) null else NextFsmState.transition_method;
 
                         if (graph.mode == .no_suspendable) {
-                            graph.insert_edge(gpa, state, NextState, null, edge_label) catch unreachable;
+                            graph.insertEdge(gpa, State, NextState, null, edge_label) catch unreachable;
                         } else {
-                            graph.insert_edge(gpa, state, NextState, method_val, edge_label) catch unreachable;
+                            graph.insertEdge(gpa, State, NextState, method_val, edge_label) catch unreachable;
                         }
-                        dsp_generate(graph, gpa, NextState);
+                        dspGenerate(graph, gpa, NextState);
                     }
                 },
                 else => @compileError("Only support tagged union!"),
