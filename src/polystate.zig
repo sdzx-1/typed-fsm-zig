@@ -9,7 +9,7 @@ pub const Exit = union(enum) {};
 // FsmState  : type           , Example(A), Example(B)
 
 pub const Mode = enum {
-    no_suspendable,
+    not_suspendable,
     suspendable,
 };
 
@@ -27,7 +27,7 @@ pub fn FSM(
     comptime Context_: type,
     // enter_fn args type is State
     comptime enter_fn_: ?fn (*Context_, type) void,
-    comptime transition_method_: if (mode_ == .no_suspendable) void else Method,
+    comptime transition_method_: if (mode_ == .not_suspendable) void else Method,
     comptime State_: type,
 ) type {
     return struct {
@@ -35,7 +35,7 @@ pub fn FSM(
         pub const mode = mode_;
         pub const Context = Context_;
         pub const enter_fn = enter_fn_;
-        pub const transition_method: Method = if (mode_ == .no_suspendable) .current else transition_method_;
+        pub const transition_method: Method = if (mode_ == .not_suspendable) .current else transition_method_;
         pub const State = State_;
     };
 }
@@ -145,7 +145,7 @@ pub fn Runner(
         pub const RetType =
             switch (FsmState.mode) {
                 .suspendable => ?StateId,
-                .no_suspendable => void,
+                .not_suspendable => void,
             };
 
         pub fn idFromState(comptime State: type) StateId {
@@ -172,7 +172,7 @@ pub fn Runner(
                     if (State == Exit) {
                         return switch (FsmState.mode) {
                             .suspendable => null,
-                            .no_suspendable => {},
+                            .not_suspendable => {},
                         };
                     }
 
@@ -223,7 +223,7 @@ pub const Graph = struct {
 
     pub const init: Self = .{
         .name = "",
-        .mode = .no_suspendable,
+        .mode = .not_suspendable,
         .node_set = .empty,
         .edge_array_list = .empty,
     };
@@ -367,9 +367,9 @@ pub const Graph = struct {
                         const edge_label = field.name;
                         const NextFsmState = field.type;
                         const NextState = NextFsmState.State;
-                        const method_val = if (NextFsmState.mode == .no_suspendable) null else NextFsmState.transition_method;
+                        const method_val = if (NextFsmState.mode == .not_suspendable) null else NextFsmState.transition_method;
 
-                        if (graph.mode == .no_suspendable) {
+                        if (graph.mode == .not_suspendable) {
                             graph.insertEdge(gpa, State, NextState, null, edge_label) catch unreachable;
                         } else {
                             graph.insertEdge(gpa, State, NextState, method_val, edge_label) catch unreachable;
