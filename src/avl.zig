@@ -2,23 +2,23 @@
 //https://www.geeksforgeeks.org/c/c-program-to-implement-avl-tree/
 //
 
-pub fn Node(ty: type) type {
+pub fn Node(Ty: type) type {
     return struct {
         key: u32,
-        data: ty,
+        data: Ty,
         left: i32,
         right: i32,
         height: i32,
     };
 }
-pub fn AVL(comptime max_len: usize, ty: type) type {
+pub fn AVL(comptime max_len: usize, Ty: type) type {
     return struct {
         len: i32 = 0,
-        nodes: [max_len]Node(ty) = undefined,
+        nodes: [max_len]Node(Ty) = undefined,
 
         const Self = @This();
 
-        pub fn search(self: *const Self, root: i32, key: u32) ?ty {
+        pub fn search(self: *const Self, root: i32, key: u32) ?Ty {
             if (root == -1) return null;
             const node = self.nodes[@as(usize, @intCast(root))];
             if (key == node.key) return node.data;
@@ -26,7 +26,7 @@ pub fn AVL(comptime max_len: usize, ty: type) type {
             if (key > node.key) return self.search(node.right, key);
             return null;
         }
-        pub fn insert(self: *Self, node: i32, key: u32, data: ty) i32 {
+        pub fn insert(self: *Self, node: i32, key: u32, data: Ty) i32 {
             // 1. Perform standard BST insertion
             if (node == -1) return self.createNode(key, data);
 
@@ -78,7 +78,7 @@ pub fn AVL(comptime max_len: usize, ty: type) type {
             return node;
         }
 
-        fn access(self: *Self, i: i32) *(Node(ty)) {
+        fn access(self: *Self, i: i32) *(Node(Ty)) {
             return &self.nodes[@as(usize, @intCast(i))];
         }
 
@@ -95,7 +95,7 @@ pub fn AVL(comptime max_len: usize, ty: type) type {
         // Function to create a new node
         //     node->height = 1; // New node is initially added at leaf
 
-        fn createNode(self: *Self, key: u32, data: ty) i32 {
+        fn createNode(self: *Self, key: u32, data: Ty) i32 {
             const curr = self.len;
             if (curr >= self.nodes.len) unreachable; //The used state exceeds the estimated maximum. You should increase the value of max_len
             self.len += 1;
@@ -113,11 +113,11 @@ pub fn AVL(comptime max_len: usize, ty: type) type {
         fn rightRotate(self: *Self, y: i32) i32 {
             // Right rotation function
             const x = self.access(y).left;
-            const T2 = self.access(x).right;
+            const t2 = self.access(x).right;
 
             // Perform rotation
             self.access(x).right = y;
-            self.access(y).left = T2;
+            self.access(y).left = t2;
 
             // Update heights
             self.access(y).height = @max(
@@ -136,12 +136,12 @@ pub fn AVL(comptime max_len: usize, ty: type) type {
         fn leftRotate(self: *Self, x: i32) i32 {
             // Left rotation function
             const y = self.access(x).right;
-            const T2 = self.access(y).left;
+            const t2 = self.access(y).left;
 
             // Perform rotation
             self.access(y).left = x;
             //     x->right = T2;
-            self.access(x).right = T2;
+            self.access(x).right = t2;
 
             // Update heights
 
@@ -180,23 +180,23 @@ test "avl" {
     const ty_arr: []const type = &.{ i32, i64, u32, u64 };
     const len_arr: []const usize = &.{ 0, 1, 2, 3, 4, 6, 8, 10, 200, 450, 780, 800, 1000 };
 
-    inline for (ty_arr) |ty| {
+    inline for (ty_arr) |Ty| {
         inline for (len_arr) |len| {
-            var tmp_arr: [len]struct { u32, ty } = undefined;
+            var tmp_arr: [len]struct { u32, Ty } = undefined;
             for (0..len) |i| {
-                tmp_arr[i] = .{ @as(u32, @intCast(i)), @as(ty, @intCast(i + 1)) };
+                tmp_arr[i] = .{ @as(u32, @intCast(i)), @as(Ty, @intCast(i + 1)) };
             }
 
             for (0..len) |_| {
-                const id_a: usize = @intCast(rand.intRangeAtMost(ty, 0, len - 1));
-                const id_b: usize = @intCast(rand.intRangeAtMost(ty, 0, len - 1));
+                const id_a: usize = @intCast(rand.intRangeAtMost(Ty, 0, len - 1));
+                const id_b: usize = @intCast(rand.intRangeAtMost(Ty, 0, len - 1));
                 const tmp = tmp_arr[id_a];
                 tmp_arr[id_a] = tmp_arr[id_b];
                 tmp_arr[id_b] = tmp;
             }
 
             var root: i32 = -1;
-            var avl: AVL(len, ty) = .{};
+            var avl: AVL(len, Ty) = .{};
 
             for (0..len) |i| {
                 const tmp = tmp_arr[i];
