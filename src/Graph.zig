@@ -31,41 +31,29 @@ pub const init: Self = .{
     .edge_array_list = .empty,
 };
 
-pub fn format(
-    val: @This(),
-    comptime _: []const u8,
-    options: std.fmt.FormatOptions,
+pub fn print_graphviz(
+    self: @This(),
     writer: anytype,
 ) !void {
     try writer.writeAll("digraph fsm_state_graph {\n");
 
     { //state graph
-        try writer.writeAll("subgraph cluster_");
-        try writer.writeAll(val.name);
-        try writer.writeAll(" {\n");
-
-        try writer.writeAll("label = \"");
-        try writer.writeAll(val.name);
-        try writer.writeAll(
-            \\_state_graph";
-            \\ labelloc = "t";
-            \\ labeljust = "c";
+        try writer.print(
+            \\  subgraph cluster_{s} {s}
+            \\    label = "{s}_graph";
+            \\    labelloc = "t";
+            \\    labeljust = "c";
             \\
-        );
+        , .{
+            self.name, "{", self.name,
+        });
 
-        var node_set_iter = val.node_set.iterator();
+        var node_set_iter = self.node_set.iterator();
         while (node_set_iter.next()) |entry| {
-            try std.fmt.formatIntValue(entry.key_ptr.*, "d", options, writer);
-            try writer.writeAll(" [label = \"");
-            try std.fmt.formatIntValue(entry.value_ptr.id, "d", options, writer);
-            try writer.writeAll("\"];\n");
+            try writer.print("    {d} [label = \"{d}\"];\n", .{ entry.key_ptr.*, entry.value_ptr.id });
         }
-        for (val.edge_array_list.items) |edge| {
-            try std.fmt.formatIntValue(edge.from, "d", options, writer);
-            try writer.writeAll(" -> ");
-            try std.fmt.formatIntValue(edge.to, "d", options, writer);
-            try writer.writeAll(" [label = \"");
-            try writer.writeAll(edge.label);
+        for (self.edge_array_list.items) |edge| {
+            try writer.print("    {d} -> {d} [label = \"{s}", .{ edge.from, edge.to, edge.label });
             if (edge.method) |method| {
                 switch (method) {
                     .current => {
@@ -82,43 +70,38 @@ pub fn format(
             try writer.writeAll("];\n");
         }
 
-        try writer.writeAll("}\n");
+        try writer.writeAll("  }\n");
     }
 
     { //all_state
 
-        try writer.writeAll("subgraph cluster_");
-        try writer.writeAll(val.name);
-        try writer.writeAll("_state {\n");
-
-        try writer.writeAll("label = \"");
-        try writer.writeAll(val.name);
-        try writer.writeAll(
-            \\_state";
-            \\ labelloc = "t";
-            \\ labeljust = "c";
-            \\
+        try writer.print(
+            \\  subgraph cluster_{s}_state {s}
+            \\    label = "{s}_state";
+            \\    labelloc = "t";
+            \\    labeljust = "c";
+            \\    all_node [shape=plaintext, label=<
+            \\      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+        ,
+            .{ self.name, "{", self.name },
         );
 
-        try writer.writeAll("all_node [shape=plaintext, label=<\n");
-        try writer.writeAll("<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n");
-
-        const nodes = val.node_set.values();
+        const nodes = self.node_set.values();
 
         for (nodes) |node| {
-            try writer.writeAll("<TR>");
-            try writer.writeAll("<TD ALIGN=\"LEFT\">");
-            try std.fmt.formatIntValue(node.id, "d", options, writer);
-            try writer.writeAll(" -- ");
-            try writer.writeAll(node.name);
-            try writer.writeAll("</TD>");
-            try writer.writeAll("</TR>\n");
+            try writer.print(
+                \\
+                \\      <TR><TD ALIGN="LEFT"> {d} -- {s} </TD></TR>
+            , .{ node.id, node.name });
         }
 
-        try writer.writeAll("</TABLE>\n");
-        try writer.writeAll(">]\n");
-
-        try writer.writeAll("}\n");
+        try writer.print(
+            \\
+            \\      </TABLE>
+            \\    >]
+            \\  {s}
+            \\
+        , .{"}"});
     }
 
     try writer.writeAll("}\n");

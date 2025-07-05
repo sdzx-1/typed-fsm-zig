@@ -254,11 +254,7 @@ test "polystate suspendable" {
     );
 
     // rand
-    var prng = std.Random.DefaultPrng.init(blk: {
-        var seed: u64 = undefined;
-        try std.posix.getrandom(std.mem.asBytes(&seed));
-        break :blk seed;
-    });
+    var prng = std.Random.DefaultPrng.init(@intCast(std.testing.random_seed));
     const rand = prng.random();
 
     for (0..500) |_| {
@@ -327,11 +323,7 @@ test "polystate not_suspendable" {
     );
 
     // rand
-    var prng = std.Random.DefaultPrng.init(blk: {
-        var seed: u64 = undefined;
-        try std.posix.getrandom(std.mem.asBytes(&seed));
-        break :blk seed;
-    });
+    var prng = std.Random.DefaultPrng.init(@intCast(std.testing.random_seed));
     const rand = prng.random();
 
     for (0..500) |_| {
