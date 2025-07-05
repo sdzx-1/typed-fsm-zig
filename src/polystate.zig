@@ -2,6 +2,8 @@ const std = @import("std");
 const Adler32 = std.hash.Adler32;
 const AVL = @import("avl.zig").AVL;
 
+pub const Graph = @import("Graph.zig");
+
 pub const Exit = union(enum) {};
 
 // FSM       : fn (type) type , Example
@@ -18,15 +20,11 @@ pub const Method = enum {
     current,
 };
 
-// FsmState(State)
-// Transition
-
 pub fn FSM(
     comptime name_: []const u8,
     comptime mode_: Mode,
     comptime Context_: type,
-    // enter_fn args type is State
-    comptime enter_fn_: ?fn (*Context_, type) void,
+    comptime enter_fn_: ?fn (*Context_, type) void, // enter_fn args type is State
     comptime transition_method_: if (mode_ == .not_suspendable) void else Method,
     comptime State_: type,
 ) type {
@@ -204,185 +202,146 @@ pub fn Runner(
     };
 }
 
-pub const Graph = struct {
-    name: []const u8,
-    mode: Mode,
-    node_set: std.AutoArrayHashMapUnmanaged(u32, Node),
-    edge_array_list: std.ArrayListUnmanaged(Edge),
-    node_id_counter: u32 = 0,
-
-    pub const Node = struct {
-        name: []const u8,
-        id: u32,
+test "polystate suspendable" {
+    const Context = struct {
+        a: i32,
+        b: i32,
+        max_a: i32,
     };
 
-    pub const Edge = struct {
-        from: u32,
-        to: u32,
-        method: ?Method,
-        label: []const u8,
+    const Tmp = struct {
+        pub fn Example(meth: Method, Current: type) type {
+            return FSM("Example", .suspendable, Context, null, meth, Current);
+        }
+
+        pub const A = union(enum) {
+            // zig fmt: off
+            exit : Example(.next, Exit),
+            to_B : Example(.next, B),
+            to_B1: Example(.current, B),
+            // zig fmt: on
+
+            pub fn handler(ctx: *Context) @This() {
+                if (ctx.a >= ctx.max_a) return .exit;
+                ctx.a += 1;
+                if (@mod(ctx.a, 2) == 0) return .to_B1;
+                return .to_B;
+            }
+        };
+
+        pub const B = union(enum) {
+            to_A: Example(.next, A),
+
+            pub fn handler(ctx: *Context) @This() {
+                ctx.b += 1;
+                return .to_A;
+            }
+        };
     };
 
-    const Self = @This();
+    const StateA = Tmp.Example(.next, Tmp.A);
 
-    pub const init: Self = .{
-        .name = "",
-        .mode = .not_suspendable,
-        .node_set = .empty,
-        .edge_array_list = .empty,
+    const allocator = std.testing.allocator;
+    var graph = Graph.init;
+    defer graph.deinit(allocator);
+    graph.generate(allocator, StateA);
+
+    const ExampleRunner = Runner(20, true, StateA);
+
+    try std.testing.expectEqual(
+        graph.node_set.count(),
+        ExampleRunner.state_map.avl.len,
+    );
+
+    // rand
+    var prng = std.Random.DefaultPrng.init(blk: {
+        var seed: u64 = undefined;
+        try std.posix.getrandom(std.mem.asBytes(&seed));
+        break :blk seed;
+    });
+    const rand = prng.random();
+
+    for (0..500) |_| {
+        const max_a: i32 = rand.intRangeAtMost(i32, 0, 10_000);
+
+        var ctx: Context = .{ .a = 0, .b = 0, .max_a = max_a };
+        var curr_id: ?ExampleRunner.StateId = ExampleRunner.idFromState(Tmp.A);
+        while (curr_id) |id| {
+            curr_id = ExampleRunner.runHandler(id, &ctx);
+        }
+
+        try std.testing.expectEqual(max_a, ctx.a);
+        try std.testing.expectEqual(max_a, ctx.b);
+    }
+}
+
+test "polystate not_suspendable" {
+    const Context = struct {
+        a: i32,
+        b: i32,
+        max_a: i32,
     };
 
-    pub fn format(
-        val: @This(),
-        comptime _: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        try writer.writeAll("digraph fsm_state_graph {\n");
-
-        { //state graph
-            try writer.writeAll("subgraph cluster_");
-            try writer.writeAll(val.name);
-            try writer.writeAll(" {\n");
-
-            try writer.writeAll("label = \"");
-            try writer.writeAll(val.name);
-            try writer.writeAll(
-                \\_state_graph";
-                \\ labelloc = "t";
-                \\ labeljust = "c";
-                \\
-            );
-
-            var node_set_iter = val.node_set.iterator();
-            while (node_set_iter.next()) |entry| {
-                try std.fmt.formatIntValue(entry.key_ptr.*, "d", options, writer);
-                try writer.writeAll(" [label = \"");
-                try std.fmt.formatIntValue(entry.value_ptr.id, "d", options, writer);
-                try writer.writeAll("\"];\n");
-            }
-            for (val.edge_array_list.items) |edge| {
-                try std.fmt.formatIntValue(edge.from, "d", options, writer);
-                try writer.writeAll(" -> ");
-                try std.fmt.formatIntValue(edge.to, "d", options, writer);
-                try writer.writeAll(" [label = \"");
-                try writer.writeAll(edge.label);
-                if (edge.method) |method| {
-                    switch (method) {
-                        .current => {
-                            try writer.writeAll("\"");
-                        },
-                        .next => {
-                            try writer.writeAll("\"  color=\"blue\" ");
-                        },
-                    }
-                } else {
-                    try writer.writeAll("\"");
-                }
-
-                try writer.writeAll("];\n");
-            }
-
-            try writer.writeAll("}\n");
+    const Tmp = struct {
+        pub fn Example(Current: type) type {
+            return FSM("Example", .not_suspendable, Context, null, {}, Current);
         }
 
-        { //all_state
+        pub const A = union(enum) {
+            // zig fmt: off
+            exit : Example(Exit),
+            to_B : Example(B),
+            to_B1: Example(B),
+            // zig fmt: on
 
-            try writer.writeAll("subgraph cluster_");
-            try writer.writeAll(val.name);
-            try writer.writeAll("_state {\n");
-
-            try writer.writeAll("label = \"");
-            try writer.writeAll(val.name);
-            try writer.writeAll(
-                \\_state";
-                \\ labelloc = "t";
-                \\ labeljust = "c";
-                \\
-            );
-
-            try writer.writeAll("all_node [shape=plaintext, label=<\n");
-            try writer.writeAll("<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\">\n");
-
-            const nodes = val.node_set.values();
-
-            for (nodes) |node| {
-                try writer.writeAll("<TR>");
-                try writer.writeAll("<TD ALIGN=\"LEFT\">");
-                try std.fmt.formatIntValue(node.id, "d", options, writer);
-                try writer.writeAll(" -- ");
-                try writer.writeAll(node.name);
-                try writer.writeAll("</TD>");
-                try writer.writeAll("</TR>\n");
+            pub fn handler(ctx: *Context) @This() {
+                if (ctx.a >= ctx.max_a) return .exit;
+                ctx.a += 1;
+                if (@mod(ctx.a, 2) == 0) return .to_B1;
+                return .to_B;
             }
+        };
 
-            try writer.writeAll("</TABLE>\n");
-            try writer.writeAll(">]\n");
+        pub const B = union(enum) {
+            to_A: Example(A),
 
-            try writer.writeAll("}\n");
-        }
-
-        try writer.writeAll("}\n");
-    }
-
-    pub fn deinit(self: *Self, gpa: std.mem.Allocator) !void {
-        self.node_set.deinit(gpa);
-        self.edge_array_list.deinit(gpa);
-    }
-
-    fn makeHash(
-        Ty: type, //State
-    ) u32 {
-        return Adler32.hash(@typeName(Ty));
-    }
-
-    pub fn insertEdge(
-        graph: *@This(),
-        gpa: std.mem.Allocator,
-        From: type, //FsmState
-        To: type, //FsmState
-        method: ?Method,
-        label: []const u8,
-    ) !void {
-        const from_id: u32 = makeHash(From);
-        const to_id: u32 = makeHash(To);
-        try graph.edge_array_list.append(
-            gpa,
-            .{ .from = from_id, .to = to_id, .method = method, .label = label },
-        );
-    }
-    pub fn generate(graph: *@This(), gpa: std.mem.Allocator, FsmState: type) void {
-        graph.name = FsmState.name;
-        graph.mode = FsmState.mode;
-        dspGenerate(graph, gpa, FsmState.State);
-    }
-
-    fn dspGenerate(graph: *@This(), gpa: std.mem.Allocator, State: type) void {
-        const id: u32 = makeHash(State);
-        if (graph.node_set.get(id)) |_| {} else {
-            graph.node_set.put(gpa, id, .{
-                .name = @typeName(State),
-                .id = graph.node_id_counter,
-            }) catch unreachable;
-            graph.node_id_counter += 1;
-            switch (@typeInfo(State)) {
-                .@"union" => |un| {
-                    inline for (un.fields) |field| {
-                        const edge_label = field.name;
-                        const NextFsmState = field.type;
-                        const NextState = NextFsmState.State;
-                        const method_val = if (NextFsmState.mode == .not_suspendable) null else NextFsmState.transition_method;
-
-                        if (graph.mode == .not_suspendable) {
-                            graph.insertEdge(gpa, State, NextState, null, edge_label) catch unreachable;
-                        } else {
-                            graph.insertEdge(gpa, State, NextState, method_val, edge_label) catch unreachable;
-                        }
-                        dspGenerate(graph, gpa, NextState);
-                    }
-                },
-                else => @compileError("Only support tagged union!"),
+            pub fn handler(ctx: *Context) @This() {
+                ctx.b += 1;
+                return .to_A;
             }
-        }
+        };
+    };
+
+    const StateA = Tmp.Example(Tmp.A);
+
+    const allocator = std.testing.allocator;
+    var graph = Graph.init;
+    defer graph.deinit(allocator);
+    graph.generate(allocator, StateA);
+
+    const ExampleRunner = Runner(20, true, StateA);
+
+    try std.testing.expectEqual(
+        graph.node_set.count(),
+        ExampleRunner.state_map.avl.len,
+    );
+
+    // rand
+    var prng = std.Random.DefaultPrng.init(blk: {
+        var seed: u64 = undefined;
+        try std.posix.getrandom(std.mem.asBytes(&seed));
+        break :blk seed;
+    });
+    const rand = prng.random();
+
+    for (0..500) |_| {
+        const max_a: i32 = rand.intRangeAtMost(i32, 0, 10_000);
+
+        var ctx: Context = .{ .a = 0, .b = 0, .max_a = max_a };
+        const curr_id: ExampleRunner.StateId = ExampleRunner.idFromState(Tmp.A);
+        ExampleRunner.runHandler(curr_id, &ctx);
+
+        try std.testing.expectEqual(max_a, ctx.a);
+        try std.testing.expectEqual(max_a, ctx.b);
     }
-};
+}
