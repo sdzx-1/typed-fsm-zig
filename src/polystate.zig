@@ -92,6 +92,10 @@ pub fn StateMap(comptime max_len: usize) type {
         }
 
         pub fn idFromState(comptime self: *const Self, comptime State: type) self.StateId {
+            if (!@hasField(self.StateId, @typeName(State))) @compileError(std.fmt.comptimePrint(
+                "Can't find State {s}",
+                .{@typeName(State)},
+            ));
             return @field(self.StateId, @typeName(State));
         }
 
