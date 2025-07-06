@@ -31,6 +31,42 @@ pub const init: Self = .{
     .edge_array_list = .empty,
 };
 
+//GitHub markdown does not yet support elk layout
+//When the number of nodes or edges is too large, mermaid is not as good as graphviz
+pub fn print_mermaid(
+    self: @This(),
+    writer: anytype,
+) !void {
+    try writer.print(
+        \\---
+        \\config:
+        \\  look: handDrawn
+        \\  layout: elk
+        \\  elk:
+        \\    mergeEdges: false
+        \\    nodePlacementStrategy: LINEAR_SEGMENTS
+        \\title: {s}
+        \\---
+        \\stateDiagram-v2
+        \\
+    , .{self.name});
+
+    var node_set_iter = self.node_set.iterator();
+    while (node_set_iter.next()) |entry| {
+        try writer.print("    {d}: {s}\n", .{ entry.key_ptr.*, entry.value_ptr.name });
+    }
+
+    std.debug.print("\n", .{});
+
+    for (self.edge_array_list.items) |edge| {
+        const sym = if (edge.method) |method| switch (method) {
+            .next => "↪",
+            .current => "",
+        } else "";
+        try writer.print("    {d} --> {d}: {s} {s}\n", .{ edge.from, edge.to, sym, edge.label });
+    }
+}
+
 pub fn print_graphviz(
     self: @This(),
     writer: anytype,
