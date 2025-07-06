@@ -47,6 +47,7 @@ pub fn StateMap(comptime max_len: usize) type {
         const Self = @This();
 
         pub fn init(comptime FsmState: type) Self {
+            @setEvalBranchQuota(10_000_000);
             comptime {
                 var res: Self = .{
                     .root = -1,
